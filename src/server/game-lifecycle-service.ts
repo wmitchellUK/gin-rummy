@@ -1,10 +1,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { applyAction, DEFAULT_GAME_RULES, shuffledDeck } from "@/src/game";
+import { applyAction, createWaitingGame, DEFAULT_GAME_RULES, shuffledDeck } from "@/src/game";
 import type { PlayerId } from "@/src/game";
-import { createGame, joinAndStartGame, loadCanonicalGame, profileName } from "./game-repository";
+import { acceptRematch, createGame, findInvite, joinAndStartWithInviteToken, loadCanonicalGame, profileName, requestRematch } from "./game-repository";
 import { projectGameState } from "./game-projection";
 import { HttpError } from "./auth";
 import { notifyGameChanged } from "./realtime";
+import { createInviteToken, inviteTokenDigest } from "./invites";
 
 const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function inviteCode() {
@@ -18,10 +19,13 @@ export async function createNewGame(userId: string) {
   // The unique index remains authoritative; retry its vanishingly unlikely collision.
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const code = inviteCode();
+    const token = createInviteToken();
+    const digest = inviteTokenDigest(token);
+    if (!digest) throw new Error("Could not create invite token.");
     try {
-      const gameId = await createGame(code, userId, displayName, DEFAULT_GAME_RULES);
+      const gameId = await createGame(code, digest, userId, displayName, DEFAULT_GAME_RULES);
       const loaded = await loadCanonicalGame(gameId);
-      return { inviteCode: code, view: projectGameState(loaded.state, userId, loaded.snapshots) };
+      return { inviteToken: token, view: projectGameState(loaded.state, userId, loaded.snapshots, loaded.rematchRequestedBy) };
     } catch (error) {
       if (!(error instanceof HttpError) || error.code !== "INVITE_CODE_COLLISION" || attempt === 2) throw error;
     }
@@ -29,24 +33,68 @@ export async function createNewGame(userId: string) {
   throw new Error("Could not allocate an invite code.");
 }
 
-export async function joinGameByInvite(userId: string, rawCode: string) {
-  const invite = rawCode.trim().toUpperCase();
-  if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/.test(invite)) throw new HttpError(404, "INVITE_UNAVAILABLE");
+export type InviteResolution =
+  | { state: "OPEN" }
+  | { state: "ALREADY_A_PLAYER"; gameId: string }
+  | { state: "FULL" }
+  | { state: "UNAVAILABLE" };
+
+export async function resolveInvite(userId: string, rawToken: string): Promise<InviteResolution> {
+  const digest = inviteTokenDigest(rawToken);
+  if (!digest) return { state: "UNAVAILABLE" };
+  const invite = await findInvite(digest);
+  if (!invite) return { state: "UNAVAILABLE" };
+  const loaded = await loadCanonicalGame(invite.id);
+  if (loaded.snapshots.some((player) => player.userId === userId)) return { state: "ALREADY_A_PLAYER", gameId: invite.id };
+  return invite.status === "WAITING" && loaded.state.phase === "WAITING_FOR_PLAYER" ? { state: "OPEN" } : { state: "FULL" };
+}
+
+export async function joinGameByInviteToken(userId: string, rawToken: string) {
+  const digest = inviteTokenDigest(rawToken);
+  if (!digest) throw new HttpError(404, "INVITE_UNAVAILABLE");
   const displayName = await profileName(userId);
-  // This read only gives trusted server code enough state to create a secure deal;
-  // browser callers never receive it and the RPC below rechecks the waiting row under lock.
-  const admin = (await import("./supabase-admin")).createAdminClient();
-  const { data: game, error } = await admin.from("games").select("id").eq("invite_code", invite).maybeSingle();
-  if (error || !game) throw new HttpError(404, "INVITE_UNAVAILABLE");
-  const loaded = await loadCanonicalGame(game.id as string);
-  if (loaded.state.phase !== "WAITING_FOR_PLAYER" || loaded.state.players[0]?.id === userId) throw new HttpError(404, "INVITE_UNAVAILABLE");
+  const invite = await findInvite(digest);
+  if (!invite) throw new HttpError(404, "INVITE_UNAVAILABLE");
+  const loaded = await loadCanonicalGame(invite.id);
+  if (loaded.snapshots.some((player) => player.userId === userId)) return { outcome: "ALREADY_A_PLAYER" as const, gameId: invite.id };
+  if (loaded.state.phase !== "WAITING_FOR_PLAYER") return { outcome: "FULL" as const };
   const started = applyAction(loaded.state, {
     type: "START_GAME", actionId: randomUUID() as never, expectedVersion: loaded.state.version, actorId: "SYSTEM",
     opponentId: userId as PlayerId, dealPlan: { deck: shuffledDeck(secureSource), dealerId: randomBytes(1)[0]! % 2 === 0 ? loaded.state.players[0].id : userId as PlayerId },
   });
   if (!started.ok) throw new Error("Could not create initial deal.");
-  const committed = await joinAndStartGame(invite, userId, displayName, started.nextState, started.events);
-  const fresh = await loadCanonicalGame(committed.gameId);
-  void notifyGameChanged(committed.gameId, committed.version);
-  return projectGameState(fresh.state, userId, fresh.snapshots);
+  const committed = await joinAndStartWithInviteToken(digest, userId, displayName, started.nextState, started.events);
+  if (committed.outcome === "ALREADY_A_PLAYER") return { outcome: committed.outcome, gameId: committed.game_id! };
+  if (committed.outcome === "FULL") return { outcome: committed.outcome };
+  const fresh = await loadCanonicalGame(committed.game_id!);
+  void notifyGameChanged(committed.game_id!, committed.version!);
+  return { outcome: "JOINED" as const, game: projectGameState(fresh.state, userId, fresh.snapshots, fresh.rematchRequestedBy) };
+}
+
+export async function rematchGame(gameId: string, userId: string, response: "REQUEST" | "ACCEPT") {
+  const loaded = await loadCanonicalGame(gameId);
+  if (loaded.state.phase !== "GAME_COMPLETE" || !loaded.snapshots.some((player) => player.userId === userId)) throw new HttpError(400, "REMATCH_UNAVAILABLE");
+
+  if (response === "REQUEST") {
+    await requestRematch(gameId, userId);
+    const fresh = await loadCanonicalGame(gameId);
+    void notifyGameChanged(gameId, fresh.state.version);
+    return { game: projectGameState(fresh.state, userId, fresh.snapshots, fresh.rematchRequestedBy) };
+  }
+
+  if (!loaded.rematchRequestedBy || loaded.rematchRequestedBy === userId) throw new HttpError(400, "REMATCH_UNAVAILABLE");
+  const newGameId = randomUUID();
+  const players = [...loaded.snapshots].sort((a, b) => a.seat - b.seat);
+  const waiting = createWaitingGame(newGameId, players[0]!.userId as PlayerId, loaded.state.rules);
+  const started = applyAction(waiting, {
+    type: "START_GAME", actionId: randomUUID() as never, expectedVersion: 0, actorId: "SYSTEM",
+    opponentId: players[1]!.userId as PlayerId,
+    dealPlan: { deck: shuffledDeck(secureSource), dealerId: randomBytes(1)[0]! % 2 === 0 ? players[0]!.userId as PlayerId : players[1]!.userId as PlayerId },
+  });
+  if (!started.ok) throw new Error("Could not create rematch deal.");
+  const committed = await acceptRematch({ gameId, userId, newGameId, inviteCode: inviteCode(), nextState: started.nextState, events: started.events });
+  const fresh = await loadCanonicalGame(committed.game_id);
+  void notifyGameChanged(gameId, loaded.state.version);
+  void notifyGameChanged(committed.game_id, committed.version);
+  return { game: projectGameState(fresh.state, userId, fresh.snapshots, fresh.rematchRequestedBy), rematchGameId: committed.game_id };
 }

@@ -48,7 +48,7 @@ export async function applyPlayerAction(gameId: string, actorId: string, input: 
     ...(result.nextState.phase === "GAME_COMPLETE" ? { result: result.nextState.gameResult } : {}),
   });
   const fresh = await loadCanonicalGame(gameId);
-  const view = projectGameState(fresh.state, actorId, fresh.snapshots);
+  const view = projectGameState(fresh.state, actorId, fresh.snapshots, fresh.rematchRequestedBy);
   if (committed.outcome === "COMMITTED") void notifyGameChanged(gameId, committed.version);
   return { view, stale: committed.outcome === "STALE" };
 }

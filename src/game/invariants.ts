@@ -87,6 +87,7 @@ export function validateGameState(state: GameState): StateValidation {
     const opponent = state.players.find((player) => player.id !== state.currentPlayerId);
     if (!actor || !opponent || actor.hand.length !== 11 || opponent.hand.length !== 10) return fail("Discard phase hand sizes are invalid.");
     if (state.forbiddenDiscardId !== null && !actor.hand.some((card) => card.id === state.forbiddenDiscardId)) return fail("The forbidden discard is invalid.");
+    if (state.drawnCardId !== undefined && !actor.hand.some((card) => card.id === state.drawnCardId)) return fail("The drawn card is invalid.");
   } else if (active && handSizes !== "10,10") return fail("Active hand sizes are invalid.");
   if ("currentPlayerId" in state && !state.players.some((player) => player.id === state.currentPlayerId)) return fail("The current player is invalid.");
   if (state.phase === "OPENING_NON_DEALER" || state.phase === "OPENING_DEALER") {

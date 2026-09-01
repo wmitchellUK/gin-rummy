@@ -96,7 +96,7 @@ function opening(state: Extract<GameState, { phase: "OPENING_NON_DEALER" | "OPEN
   const nextState: AwaitingDiscardState = {
     gameId: state.gameId, version: state.version + 1, rules: state.rules, players: replaceHand(state.players, action.actorId, [...player.hand, card]),
     handNumber: state.handNumber, dealerId: state.dealerId, stock: state.stock, discardPile: state.discardPile.slice(1), handHistory: state.handHistory,
-    phase: "AWAITING_DISCARD", currentPlayerId: action.actorId, drawSource: "INITIAL_UPCARD", forbiddenDiscardId: card.id,
+    phase: "AWAITING_DISCARD", currentPlayerId: action.actorId, drawSource: "INITIAL_UPCARD", drawnCardId: card.id, forbiddenDiscardId: card.id,
   };
   return success(nextState, [{ type: "INITIAL_UPCARD_TAKEN", playerId: action.actorId, card, visibility: PUBLIC }]);
 }
@@ -109,7 +109,7 @@ function draw(state: Extract<GameState, { phase: "AWAITING_DRAW" }>, action: Ext
     const nextState: AwaitingDiscardState = { gameId: state.gameId, version: state.version + 1, rules: state.rules,
       players: replaceHand(state.players, action.actorId, [...player.hand, card]), handNumber: state.handNumber, dealerId: state.dealerId,
       stock: state.stock, discardPile: state.discardPile.slice(1), handHistory: state.handHistory, phase: "AWAITING_DISCARD",
-      currentPlayerId: state.currentPlayerId, drawSource: "DISCARD", forbiddenDiscardId: card.id };
+      currentPlayerId: state.currentPlayerId, drawSource: "DISCARD", drawnCardId: card.id, forbiddenDiscardId: card.id };
     return success(nextState, [{ type: "DISCARD_DRAWN", playerId: action.actorId, card, visibility: PUBLIC }]);
   }
   if (state.stock.length < 3) return failure(state, "STOCK_UNAVAILABLE");
@@ -130,7 +130,7 @@ function draw(state: Extract<GameState, { phase: "AWAITING_DRAW" }>, action: Ext
   }
   const nextState: AwaitingDiscardState = { gameId: state.gameId, phase: "AWAITING_DISCARD", version: state.version + 1, rules: state.rules,
     players: nextPlayers, handNumber: state.handNumber, dealerId: state.dealerId, stock: nextStock, discardPile: state.discardPile,
-    handHistory: state.handHistory, currentPlayerId: state.currentPlayerId, drawSource: "STOCK", forbiddenDiscardId: null };
+    handHistory: state.handHistory, currentPlayerId: state.currentPlayerId, drawSource: "STOCK", drawnCardId: card.id, forbiddenDiscardId: null };
   return success(nextState, events);
 }
 

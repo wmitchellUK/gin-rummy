@@ -150,6 +150,8 @@ export interface AwaitingDiscardState extends GameStateBase {
   readonly dealerId: PlayerId;
   readonly currentPlayerId: PlayerId;
   readonly drawSource: "STOCK" | "DISCARD" | "INITIAL_UPCARD";
+  /** The card received for this discard decision. Optional for legacy persisted games. */
+  readonly drawnCardId?: CardId;
   readonly forbiddenDiscardId: CardId | null;
 }
 

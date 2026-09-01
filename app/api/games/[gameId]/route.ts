@@ -10,6 +10,6 @@ export async function GET(_: Request, context: { params: Promise<{ gameId: strin
     const { gameId } = await context.params;
     await requireMembership(gameId, userId);
     const loaded = await loadCanonicalGame(gameId);
-    return NextResponse.json({ game: projectGameState(loaded.state, userId, loaded.snapshots) });
+    return NextResponse.json({ game: projectGameState(loaded.state, userId, loaded.snapshots, loaded.rematchRequestedBy) });
   } catch (error) { return routeError(error); }
 }

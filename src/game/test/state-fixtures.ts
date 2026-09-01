@@ -34,7 +34,7 @@ export function discardState(
   return {
     gameId: "game", version: 7, rules: options.rules ?? DEFAULT_GAME_RULES, players, handNumber: hasPriorScore ? 2 : 1, dealerId: P1,
     stock: remaining.slice(0, 20), discardPile: remaining.slice(20), handHistory: priorHistory, phase: "AWAITING_DISCARD",
-    currentPlayerId: P1, drawSource: options.forbidden ? "DISCARD" : "STOCK", forbiddenDiscardId: options.forbidden ?? null,
+    currentPlayerId: P1, drawSource: options.forbidden ? "DISCARD" : "STOCK", drawnCardId: options.forbidden ?? actorHand.at(-1)?.id, forbiddenDiscardId: options.forbidden ?? null,
   };
 }
 

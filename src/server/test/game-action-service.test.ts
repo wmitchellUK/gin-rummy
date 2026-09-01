@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { applyAction, createWaitingGame, standardDeck } from "@/src/game";
 import type { GameState, PlayerId } from "@/src/game";
-import type { ParsedActionRequest } from "../game-input";
+import { hand } from "@/src/game/test/card-fixtures";
+import { drawState } from "@/src/game/test/state-fixtures";
+import { parseActionRequest, type ParsedActionRequest } from "../game-input";
 
 const repository = vi.hoisted(() => ({
   commitGameAction: vi.fn(),
@@ -11,6 +13,8 @@ const repository = vi.hoisted(() => ({
 
 vi.mock("../game-repository", () => repository);
 vi.mock("../realtime", () => ({ notifyGameChanged: vi.fn().mockResolvedValue(undefined) }));
+// The action service needs only HttpError here; avoid loading the Supabase client.
+vi.mock("../auth", () => ({ HttpError: class extends Error {} }));
 
 import { applyPlayerAction } from "../game-action-service";
 
@@ -105,5 +109,40 @@ describe("authoritative game action service", () => {
 
     expect(result).toMatchObject({ stale: false, view: { version: acceptedVersion } });
     expect(repository.commitGameAction).not.toHaveBeenCalled();
+  });
+
+  it("still rejects a direct API action attempting to rediscard a discard-pile draw", async () => {
+    const base = drawState(
+      hand("A♥ 2♥ 3♥ 4♣ 5♣ 6♣ 9♦ 10♦ J♦ 8♠"),
+      hand("A♣ 2♣ 3♣ 7♥ 8♥ 9♥ Q♠ Q♥ Q♣ 5♦"),
+    );
+    const kDiamond = [...base.stock, ...base.discardPile].find((card) => card.id === "K:DIAMONDS")!;
+    const remaining = [...base.stock, ...base.discardPile].filter((card) => card.id !== kDiamond.id);
+    persisted = {
+      ...base,
+      players: [{ ...base.players[0]!, id: p1 }, { ...base.players[1]!, id: p2 }],
+      currentPlayerId: p1,
+      dealerId: p1,
+      stock: remaining.slice(0, 20),
+      discardPile: [kDiamond, ...remaining.slice(20)],
+    };
+
+    const draw = await applyPlayerAction(gameId, p1, {
+      expectedVersion: persisted.version,
+      action: { actionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", type: "DRAW_DISCARD" },
+    });
+    expect(draw.view.turnRestrictions).toEqual({ cannotDiscardCardId: "K:DIAMONDS" });
+    expect(persisted.phase).toBe("AWAITING_DISCARD");
+
+    const maliciousRequest = parseActionRequest({
+      expectedVersion: persisted.version,
+      action: { actionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", type: "DISCARD", cardId: kDiamond.id },
+    });
+    if (!maliciousRequest) throw new Error("fixture failed");
+    const rejected = await applyPlayerAction(gameId, p1, maliciousRequest);
+
+    expect(rejected).toMatchObject({ stale: false, errorCode: "ILLEGAL_REDISCARD" });
+    expect(repository.commitGameAction).toHaveBeenCalledTimes(1);
+    expect(persisted.version).toBe(draw.view.version);
   });
 });

@@ -47,12 +47,13 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
-  if (
-    request.nextUrl.pathname !== "/" &&
-    !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/auth")
-  ) {
+  const pathname = request.nextUrl.pathname;
+  // Guests establish their identity through the session endpoint. Game pages must
+  // also load before that call; each API handler performs its own auth/membership
+  // authorization rather than trusting this navigation convenience layer.
+  const publicPath = pathname === "/" || pathname.startsWith("/api/") || pathname.startsWith("/game/") || pathname.startsWith("/join/") || pathname.startsWith("/settings")
+    || pathname.startsWith("/login") || pathname.startsWith("/auth");
+  if (!publicPath && !user) {
     // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";

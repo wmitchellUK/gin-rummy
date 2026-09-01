@@ -7,9 +7,10 @@ export class HttpError extends Error {
 
 export async function requireUserId(): Promise<string> {
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) throw new HttpError(401, "UNAUTHENTICATED");
-  return data.user.id;
+  const { data, error } = await supabase.auth.getClaims();
+  const userId = typeof data?.claims?.sub === "string" ? data.claims.sub : null;
+  if (error || !userId) throw new HttpError(401, "UNAUTHENTICATED");
+  return userId;
 }
 
 export async function requireMembership(gameId: string, userId: string) {

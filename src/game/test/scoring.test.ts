@@ -25,6 +25,24 @@ describe("declaration scoring", () => {
     expect(scored.players[0].matchScore).toBe(8);
   });
 
+  it("scores the chained-layoff knock regression as 2 points", () => {
+    const dealt = players(
+      "2♦ 3♥ 4♥ 5♥ 9♦ 9♥ 9♠ K♣ K♥ K♠",
+      "A♥ A♠ 2♥ 3♣ 7♣ 7♥ 7♠ J♣ J♦ J♥",
+      0, 46,
+    );
+    const scored = scoreDeclaration({ handNumber: 1, dealerId: P2, declaration: "KNOCK", declarerId: P1, finalDiscard: c("Q♦"), players: dealt, rules: DEFAULT_GAME_RULES });
+    const knocker = scored.result.players.find((player) => player.playerId === P1)!;
+    const opponent = scored.result.players.find((player) => player.playerId === P2)!;
+
+    expect(knocker.originalDeadwoodValue).toBe(2);
+    expect(opponent.originalDeadwoodValue).toBe(7);
+    expect(opponent.layoffs.map((layoff) => layoff.card.id).sort()).toEqual(["2:HEARTS", "A:HEARTS"]);
+    expect(opponent.finalDeadwoodCards.map((card) => card.id).sort()).toEqual(["3:CLUBS", "A:SPADES"]);
+    expect(opponent.finalDeadwoodValue).toBe(4);
+    expect(scored.result).toMatchObject({ declarerId: P1, winnerId: P1, scoringReason: "KNOCK", pointsAwarded: 2, scoresAfter: { [P1]: 2, [P2]: 46 } });
+  });
+
   it("awards 28 for an 8-versus-5 undercut", () => {
     const dealt = players(
       "A♥ 2♥ 3♥ 4♣ 5♣ 6♣ 9♦ 10♦ J♦ 8♠",

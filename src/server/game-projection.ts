@@ -1,5 +1,8 @@
-import type { GameState } from "@/src/game";
-import type { PlayerGameView, LegalControl } from "@/src/shared/game-view";
+import type { Card, GameState, HandResult, Meld, PlayerHandResult } from "@/src/game";
+import type {
+  HandResultView, HandScoreView, LegalControl, PlayerGameView, PublicCard, PublicLayoff,
+  PublicMeld, RevealedPlayerHandView,
+} from "@/src/shared/game-view";
 
 export type PlayerSnapshot = { readonly userId: string; readonly seat: 0 | 1; readonly displayName: string };
 
@@ -18,15 +21,61 @@ function status(state: GameState): PlayerGameView["status"] {
   return "PLAYING";
 }
 
+const publicCard = (card: Card): PublicCard => card;
+const publicMeld = (meld: Meld): PublicMeld => ({ kind: meld.kind, cards: meld.cards.map(publicCard) });
+const publicLayoff = (layoff: PlayerHandResult["layoffs"][number]): PublicLayoff => ({
+  card: publicCard(layoff.card), resultingMeld: publicMeld(layoff.resultingMeld),
+});
+function pair<T>(items: readonly T[]): readonly [T, T] {
+  if (items.length !== 2) throw new Error("A hand result must contain two players.");
+  return [items[0]!, items[1]!];
+}
+
+function projectHandResult(result: HandResult, snapshots: readonly PlayerSnapshot[]): HandResultView {
+  const nameFor = (playerId: string) => snapshots.find((snapshot) => snapshot.userId === playerId)?.displayName ?? "Player";
+  const scoresAfter = result.kind === "SCORED"
+    ? result.players.map((player): HandScoreView => ({ playerId: player.playerId, displayName: nameFor(player.playerId), score: result.scoresAfter[player.playerId] }))
+    : Object.entries(result.scoresAfter).map(([playerId, score]): HandScoreView => ({ playerId, displayName: nameFor(playerId), score }));
+  if (result.kind === "CANCELLED") {
+    return {
+      kind: "CANCELLED", handNumber: result.handNumber, reason: result.reason, pointsAwarded: result.pointsAwarded,
+      scoresAfter: pair(scoresAfter),
+    };
+  }
+  const players = result.players.map((player): RevealedPlayerHandView => ({
+    playerId: player.playerId, displayName: nameFor(player.playerId), revealedHand: player.revealedHand.map(publicCard),
+    melds: player.melds.map(publicMeld), originalDeadwoodCards: player.originalDeadwoodCards.map(publicCard),
+    originalDeadwoodValue: player.originalDeadwoodValue, layoffs: player.layoffs.map(publicLayoff),
+    finalDeadwoodCards: player.finalDeadwoodCards.map(publicCard), finalDeadwoodValue: player.finalDeadwoodValue,
+  }));
+  return {
+    kind: "SCORED", handNumber: result.handNumber, declaration: result.declaration,
+    declarerId: result.declarerId, declarerName: nameFor(result.declarerId),
+    winnerId: result.winnerId, winnerName: nameFor(result.winnerId), scoringReason: result.scoringReason,
+    pointsAwarded: result.pointsAwarded,
+    players: pair(players), scoresAfter: pair(scoresAfter),
+  };
+}
+
 /** The sole GameState-to-browser serializer. Do not add canonical fields here. */
-export function projectGameState(state: GameState, userId: string, snapshots: readonly PlayerSnapshot[]): PlayerGameView {
+export function projectGameState(state: GameState, userId: string, snapshots: readonly PlayerSnapshot[], rematchRequestedBy?: string | null): PlayerGameView {
   const player = state.players.find((item) => item.id === userId);
   const self = snapshots.find((item) => item.userId === userId);
   if (!player || !self) throw new Error("Projection requested for a non-player.");
   const other = state.players.find((item) => item.id !== userId);
   const otherSnapshot = snapshots.find((item) => item.userId === other?.id);
-  const result = state.phase === "HAND_COMPLETE" ? state.handResult : undefined;
+  const result = state.phase === "HAND_COMPLETE" ? projectHandResult(state.handResult, snapshots) : undefined;
   const gameResult = state.phase === "GAME_COMPLETE" ? state.gameResult : undefined;
+  const turnRestrictions = state.phase === "AWAITING_DISCARD"
+    && state.currentPlayerId === userId
+    && state.forbiddenDiscardId !== null
+    ? { cannotDiscardCardId: state.forbiddenDiscardId }
+    : undefined;
+  const drawnStockCardId = state.phase === "AWAITING_DISCARD"
+    && state.currentPlayerId === userId
+    && state.drawSource === "STOCK"
+    ? state.drawnCardId
+    : undefined;
   return {
     gameId: state.gameId, version: state.version, status: status(state), phase: state.phase, rules: state.rules,
     you: { seat: self.seat, displayName: self.displayName, score: player.matchScore, hand: player.hand },
@@ -34,6 +83,9 @@ export function projectGameState(state: GameState, userId: string, snapshots: re
     dealerId: state.dealerId, ...("currentPlayerId" in state ? { currentPlayerId: state.currentPlayerId } : {}),
     stockCount: state.stock.length, discardPile: state.discardPile,
     ...("initialUpcard" in state ? { initialUpcard: state.initialUpcard } : {}), legalControls: controls(state, userId),
+    ...(turnRestrictions ? { turnRestrictions } : {}),
+    ...(drawnStockCardId ? { drawnStockCardId } : {}),
     ...(result ? { handResult: result } : {}), ...(gameResult ? { gameResult } : {}),
+    ...(rematchRequestedBy ? { rematch: { requestedBy: rematchRequestedBy === userId ? "YOU" : "OPPONENT" } } : {}),
   };
 }
