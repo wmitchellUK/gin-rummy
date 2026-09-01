@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyAction, createWaitingGame, DEFAULT_GAME_RULES, standardDeck, validateGameState, validateRules } from "../index";
 import type { ActionId, Card, GameAction, GameState } from "../types";
 import { AID, P1, P2 } from "./card-fixtures";
-import { startedState } from "./state-fixtures";
+import { drawState, startedState } from "./state-fixtures";
 
 const action = (deck: readonly Card[]): GameAction => ({
   type: "START_GAME", actorId: "SYSTEM", actionId: AID, expectedVersion: 0, opponentId: P2, dealPlan: { deck, dealerId: P1 },
@@ -63,6 +63,33 @@ describe("state and deal integrity", () => {
   it("rejects an invalid current player", () => {
     const state = startedState();
     const corrupt = { ...state, currentPlayerId: "stranger" } as unknown as GameState;
+    expect(validateGameState(corrupt)).toMatchObject({ ok: false, code: "INVALID_STATE" });
+  });
+
+  it("rejects an unknown phase instead of throwing while applying an action", () => {
+    const state = { ...startedState(), phase: "UNKNOWN_PHASE" } as unknown as GameState;
+    expect(validateGameState(state)).toMatchObject({ ok: false, code: "INVALID_STATE" });
+    expect(code(applyAction(state, { type: "PASS_INITIAL_UPCARD", actorId: P2, actionId: AID, expectedVersion: state.version }))).toBe("INVALID_STATE");
+  });
+
+  it("rejects score movement fabricated into a cancelled hand", () => {
+    const drawingState = drawState(
+      startedState().players[0].hand,
+      startedState().players[1].hand,
+      3,
+    );
+    const cancelled = applyAction(drawingState, { type: "DRAW_STOCK", actorId: P1, actionId: AID, expectedVersion: drawingState.version });
+    if (!cancelled.ok || cancelled.nextState.phase !== "HAND_COMPLETE") throw new Error("Could not create cancelled hand");
+    const alteredResult = {
+      ...cancelled.nextState.handResult,
+      scoresAfter: { [P1]: 1, [P2]: 0 },
+    };
+    const corrupt = {
+      ...cancelled.nextState,
+      players: [{ ...cancelled.nextState.players[0], matchScore: 1 }, cancelled.nextState.players[1]],
+      handHistory: [alteredResult],
+      handResult: alteredResult,
+    } as GameState;
     expect(validateGameState(corrupt)).toMatchObject({ ok: false, code: "INVALID_STATE" });
   });
 

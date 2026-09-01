@@ -6,6 +6,10 @@ export interface ValidationFailure { readonly ok: false; readonly code: Extract<
 export type StateValidation = ValidationSuccess | ValidationFailure;
 
 const integerAtLeast = (value: unknown, minimum: number) => Number.isInteger(value) && (value as number) >= minimum;
+const phases = new globalThis.Set<GameState["phase"]>([
+  "WAITING_FOR_PLAYER", "OPENING_NON_DEALER", "OPENING_DEALER", "AWAITING_DRAW",
+  "AWAITING_DISCARD", "HAND_COMPLETE", "GAME_COMPLETE",
+]);
 
 export function validateRules(rules: GameRules): StateValidation {
   if (!rules || !integerAtLeast(rules.knockThreshold, 0) || !integerAtLeast(rules.ginBonus, 0)
@@ -31,7 +35,7 @@ function scoredResultAgrees(state: Exclude<GameState, { phase: "WAITING_FOR_PLAY
 export function validateGameState(state: GameState): StateValidation {
   if (!state || typeof state !== "object" || typeof state.gameId !== "string" || !integerAtLeast(state.version, 0)
     || !integerAtLeast(state.handNumber, 0) || !Array.isArray(state.players) || !Array.isArray(state.stock)
-    || !Array.isArray(state.discardPile) || !Array.isArray(state.handHistory)) return fail("Game state structure is invalid.");
+    || !Array.isArray(state.discardPile) || !Array.isArray(state.handHistory) || !phases.has(state.phase)) return fail("Game state structure is invalid.");
   const rules = validateRules(state.rules);
   if (!rules.ok) return rules;
   if (state.players.some((player) => typeof player.id !== "string" || player.id.length === 0 || !Array.isArray(player.hand) || !integerAtLeast(player.matchScore, 0))) return fail("Player state is invalid.");
@@ -45,9 +49,22 @@ export function validateGameState(state: GameState): StateValidation {
   if (state.players.length !== 2 || !state.dealerId || !state.players.some((player) => player.id === state.dealerId) || state.handNumber < 1) return fail("Active player state is inconsistent.");
   const handIsComplete = state.phase === "HAND_COMPLETE" || state.phase === "GAME_COMPLETE";
   if (state.handHistory.length !== state.handNumber - (handIsComplete ? 0 : 1)) return fail("Hand history length is inconsistent.");
+  const expectedScores = Object.fromEntries(state.players.map((player) => [player.id, 0])) as Record<PlayerId, number>;
   for (let index = 0; index < state.handHistory.length; index += 1) {
     const result = state.handHistory[index]!;
     if (result.handNumber !== index + 1 || (index > 0 && result.dealerId === state.handHistory[index - 1]!.dealerId)) return fail("Hand history order is invalid.");
+    if (state.players.some((player) => !integerAtLeast(result.scoresAfter[player.id], 0))) return fail("Hand history scores are invalid.");
+    if (result.kind === "CANCELLED") {
+      if (result.pointsAwarded !== 0 || state.players.some((player) => result.scoresAfter[player.id] !== expectedScores[player.id])) {
+        return fail("A cancelled hand cannot change scores.");
+      }
+    } else {
+      if (state.players.some((player) => result.scoresBefore[player.id] !== expectedScores[player.id]
+        || result.scoresAfter[player.id] !== expectedScores[player.id] + (player.id === result.winnerId ? result.pointsAwarded : 0))) {
+        return fail("Scored hand totals are inconsistent.");
+      }
+    }
+    for (const player of state.players) expectedScores[player.id] = result.scoresAfter[player.id];
   }
   if (state.handHistory.length > 0) {
     const latestScores = state.handHistory.at(-1)!.scoresAfter;
