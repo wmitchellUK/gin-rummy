@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyAction, createWaitingGame, standardDeck, validateGameState } from "../index";
 import type { ActionId, GameAction, GameState } from "../types";
-import { AID, c, hand, id, P1, P2 } from "./card-fixtures";
+import { AID, hand, id, P1, P2 } from "./card-fixtures";
 import { discardState, drawState, startedState } from "./state-fixtures";
 
 let actionCounter = 0;

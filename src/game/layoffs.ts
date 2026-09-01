@@ -1,7 +1,7 @@
 import { cardValue, sortCards } from "./cards";
 import { enumerateMinimumDeadwoodArrangements } from "./hand-analysis";
 import { createMeld, meldSignature } from "./melds";
-import type { Card, HandAnalysis, Layoff, LayoffResult, Meld } from "./types";
+import type { Card, Layoff, LayoffResult, Meld } from "./types";
 
 interface SearchResult {
   readonly remaining: readonly Card[];
@@ -70,6 +70,10 @@ export function optimizeLayoffs(opponentHand: readonly Card[], knockerMelds: rea
         && candidate.finalDeadwoodCards.map((card) => card.id).join(",") === best.finalDeadwoodCards.map((card) => card.id).join(",")
         && `${candidate.arrangementKey}|${candidate.layoffKey}`.localeCompare(`${best.arrangementKey}|${best.layoffKey}`) < 0)) best = candidate;
   }
-  const { arrangementKey: _arrangementKey, layoffKey: _layoffKey, ...result } = best!;
-  return result;
+  return {
+    opponentAnalysis: best!.opponentAnalysis,
+    layoffs: best!.layoffs,
+    finalDeadwoodCards: best!.finalDeadwoodCards,
+    finalDeadwoodValue: best!.finalDeadwoodValue,
+  };
 }
