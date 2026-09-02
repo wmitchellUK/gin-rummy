@@ -33,6 +33,84 @@
 - Optional deployment with [Supabase Vercel Integration and Vercel deploy](#deploy-your-own)
   - Environment variables automatically assigned to Vercel project
 
+## Deploy this app
+
+Changes on your computer do not deploy automatically. A deployment happens only after
+the repository is connected to the Vercel project and you push a commit to its
+configured production branch (currently `main`).
+
+### Recommended: deploy through GitHub
+
+1. In Vercel, open the `gin-rummy` project and confirm that it is connected to
+   `wmitchellUK/gin-rummy`, with `main` selected as the production branch.
+2. Make and verify your changes locally:
+
+   ```bash
+   npm test
+   npm run lint
+   npm run build
+   ```
+
+3. Commit and push them:
+
+   ```bash
+   git add .
+   git commit -m "Describe the change"
+   git push origin main
+   ```
+
+Vercel will build the commit and promote it to production when the deployment
+checks pass. Pull requests and non-production branches create preview deployments
+when that option is enabled in the Vercel project.
+
+### Supabase configuration
+
+Before the first production deploy, link the local Supabase project and apply the
+committed migrations:
+
+```bash
+npx supabase login
+npx supabase link --project-ref YOUR_PROJECT_REF
+npx supabase db push
+```
+
+In Vercel Project Settings → Environment Variables, configure the values from
+`.env.example` for Production (and Preview if needed):
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+```
+
+Never commit `.env.local` or service-role keys. Redeploy after changing environment
+variables.
+
+### Manual Vercel CLI deploy
+
+If GitHub is not connected, deploy from this directory instead:
+
+```bash
+npx vercel login
+npx vercel link
+npx vercel --prod
+```
+
+The local `.vercel` directory only identifies the linked project and should remain
+ignored by Git.
+
+### Verify crawler protection after deploy
+
+The app ships a disallow-all `robots.txt`, `noindex` metadata, and an
+`X-Robots-Tag` response header. Verify the production domain with:
+
+```bash
+curl -i https://YOUR_DOMAIN/robots.txt
+curl -I https://YOUR_DOMAIN/
+```
+
+This prevents indexing by compliant crawlers; it is not an access-control mechanism.
+
 ## Demo
 
 You can view a fully working demo at [demo-nextjs-with-supabase.vercel.app](https://demo-nextjs-with-supabase.vercel.app/).

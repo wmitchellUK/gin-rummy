@@ -10,6 +10,11 @@ export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
   title: "Gin Rummy",
   description: "A private two-player Gin Rummy game.",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+  },
 };
 
 export default function RootLayout({

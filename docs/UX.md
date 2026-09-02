@@ -39,7 +39,7 @@ Use CSS custom properties/Tailwind theme equivalents. Texture, if used, must be 
 - Spacing: 4px base; use 8, 12, 16, 24, 32, 48. Table inset is 24px desktop / 16px mobile. Controls have at least 44px height and 12px horizontal padding.
 - Radius: cards 8px; controls/panels 10px; table frame 24px desktop / 18px mobile; status dot circular. Do not use exaggerated pills except compact status tags.
 - Shadows: card `0 3px 8px rgb(0 0 0 / 28%)`; lifted/selected card `0 10px 20px rgb(0 0 0 / 35%)`; panel `0 4px 12px rgb(0 0 0 / 28%)`; inner wood/felt edge `inset 0 1px rgb(255 255 255 / 10%), inset 0 -3px 8px rgb(0 0 0 / 30%)`.
-- Cards: desktop player card 76×112px; desktop opponent/pile card 64×94px; mobile player card 48×72px (may scale to 54×80px at 390px+); mobile pile 54×80px. Preserve an aspect ratio of about 0.68. Never scale below 44×66px or hide rank/suit corners.
+- Cards: desktop player card 76×112px; desktop opponent/pile card 64×94px; mobile player card 60×88px (scaling to 64×94px at 390px+); mobile pile 54×80px. Preserve an aspect ratio of about 0.68. Mobile corner indices are 14–15px and every rank/suit corner remains visible even when the hand overlaps.
 
 ## Layout and responsive behavior
 
@@ -54,7 +54,7 @@ Use CSS custom properties/Tailwind theme equivalents. Texture, if used, must be 
 | Player | identity at lower left; 10–11 face-up cards span the near edge; deadwood/sort in rail below | identity/score above hand; shallow fan/overlap within full width; deadwood and sort below |
 | Actions | 2×2 group beside player hand: draw stock, take discard, knock, gin | two draw buttons, then knock/gin, full width in a 2-column grid; no hover-only information |
 
-The player hand owns the largest clear area. Keep cards in rank order or the user’s explicit order; overlap only enough to fit while leaving the upper-left rank and suit of every card visible. At 375px, distribute a 10-card hand across the available width with progressive overlap and a modest fan (maximum 7 degrees across the whole hand), not tiny cards. An 11th card may overlap more but remains individually selectable. Do not use horizontal scrolling for a normal hand. Reflow before reducing card size.
+The player hand owns the largest clear area. Keep cards in rank order or the user’s explicit order; overlap only enough to fit while leaving the upper-left rank and suit of every card visible. At 375px, distribute a 10-card hand across the available width with hand-size-aware overlap and a modest fan (maximum 7 degrees across the whole hand), not tiny cards. An 11th card may overlap more but remains individually selectable. A selected or keyboard-focused card lifts above its neighbors so its complete face and selection outline are visible. Do not use horizontal scrolling for a normal hand. Reflow before reducing card size.
 
 Desktop may use `position: relative` for the table composition, but interactive areas must remain in DOM reading order: opponent/status, public piles, player hand, player controls. Mobile uses normal flow. Do not make essential actions depend on a decorative table boundary.
 
