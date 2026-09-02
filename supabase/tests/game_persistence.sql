@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(18);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -29,6 +29,7 @@ select is((select version from public.game_state where game_id = '60000000-0000-
 
 select is((select accepted_version from public.commit_game_action('70000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001',1,'DISCARD','{"gameId":"60000000-0000-4000-8000-000000000001","version":2}'::jsonb,'PLAYING','[]'::jsonb,null,'A:CLUBS')), 2, 'a card action stores its complete receipt');
 select throws_ok($$select public.commit_game_action('70000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001',1,'DISCARD','{"gameId":"60000000-0000-4000-8000-000000000001","version":2}'::jsonb,'PLAYING','[]'::jsonb,null,'K:SPADES')$$, 'P0001', 'ACTION_ID_CONFLICT', 'an action id cannot be replayed with another card');
+select is((select accepted_version from public.commit_game_action('70000000-0000-4000-8000-000000000004','60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001',2,'DISCARD','{"gameId":"60000000-0000-4000-8000-000000000001","version":3}'::jsonb,'PLAYING','[]'::jsonb,null)), 3, 'legacy card actions remain available during application rollout');
 
 -- Repeated/concurrent rematch acceptance used to create an unlimited number of
 -- canonical games from one request. The source row lock and unique index make
