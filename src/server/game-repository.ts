@@ -23,7 +23,7 @@ export async function loadCanonicalGame(gameId: string): Promise<LoadedGame> {
 }
 
 export async function findActionReceipt(actionId: string) {
-  const { data, error } = await createAdminClient().from("game_actions").select("game_id, actor_id, accepted_version").eq("action_id", actionId).maybeSingle();
+  const { data, error } = await createAdminClient().from("game_actions").select("game_id, actor_id, expected_version, action_type, card_id, accepted_version").eq("action_id", actionId).maybeSingle();
   if (error) throw new Error("Could not read action receipt.");
   return data;
 }
@@ -37,13 +37,13 @@ function gameStatus(state: GameState): "WAITING" | "PLAYING" | "HAND_COMPLETE" |
 
 export async function commitGameAction(input: {
   actionId: string; gameId: string; actorId: string; expectedVersion: number; actionType: string;
-  nextState: GameState; events: readonly GameEvent[]; result?: GameResult;
+  cardId?: string; nextState: GameState; events: readonly GameEvent[]; result?: GameResult;
 }): Promise<{ outcome: "COMMITTED" | "IDEMPOTENT" | "STALE"; version: number }> {
   const { data, error } = await createAdminClient().rpc("commit_game_action", {
     p_action_id: input.actionId, p_game_id: input.gameId, p_actor_id: input.actorId,
     p_expected_version: input.expectedVersion, p_action_type: input.actionType,
     p_next_state: input.nextState, p_status: gameStatus(input.nextState), p_events: input.events,
-    p_result: input.result ?? null,
+    p_result: input.result ?? null, p_card_id: input.cardId ?? null,
   }).single();
   if (error) {
     if (error.message.includes("ACTION_ID_CONFLICT")) throw new HttpError(409, "ACTION_ID_CONFLICT");

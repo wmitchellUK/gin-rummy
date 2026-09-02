@@ -67,7 +67,7 @@ name snapshot, so profile edits never rewrite game history.
 | status game_status not null | WAITING, PLAYING, HAND_COMPLETE, or COMPLETE |
 | rules jsonb not null | immutable, validated GameRules snapshot |
 | created_by uuid not null references auth.users(id) | creator |
-| source_game_id uuid null references games(id) | accepted-rematch origin |
+| source_game_id uuid null references games(id) | accepted-rematch origin; unique when present |
 | rematch_requested_by uuid null references auth.users(id) | completed-game request state |
 | lifecycle timestamps | created_at, started_at, completed_at, last_activity_at |
 
@@ -111,12 +111,13 @@ This is the server-only durable idempotency receipt.
 | actor_id uuid not null references auth.users(id) | request identity |
 | expected_version integer not null | received version |
 | action_type text not null | allow-listed action kind |
+| card_id text null | discard/knock/gin card bound to this receipt |
 | accepted_version integer not null | version committed by this action |
 | created_at timestamptz not null | receipt time |
 
 Add index (game_id, created_at desc). A retry returns a fresh, authorized projection
-of current state, not a stored projection. Reuse of an action ID for another game or
-actor is an error.
+of current state, not a stored projection. Reuse of an action ID with another game,
+actor, expected version, action type, or card is an error.
 
 ### game_events
 
@@ -170,8 +171,8 @@ commit_game_action is a plpgsql RPC callable only by the server service_role. It
 an engine-validated candidate state, derived game metadata and optional result, plus
 ordered engine events. In one transaction it:
 
-1. Looks up action_id. For the same game and actor, returns its accepted version without
-   applying again; it rejects conflicting reuse.
+1. Looks up action_id. For the exact same actor and action payload, returns its accepted
+   version without applying again; it rejects conflicting reuse.
 2. Locks the game_state row with SELECT FOR UPDATE.
 3. Compares database version to p_expected_version; returns a typed stale outcome with
    no writes on mismatch.
@@ -189,6 +190,10 @@ Creation, join-and-start, and accepted-rematch creation use separate transaction
 RPCs. Join locks the game, confirms it is waiting, inserts seat 1, creates the initial
 canonical state/deal/events, and changes status atomically. No sequence of unrelated
 Supabase calls substitutes for a transaction.
+
+Rematch acceptance locks the completed source game and returns its existing rematch on
+a retry. A partial unique index on source_game_id prevents concurrent trusted callers
+from creating more than one accepted rematch for the same game.
 
 If two requests load the same version and apply the engine in memory, only one commit
 can lock and update it. The loser discards its candidate, refetches a projection, and
@@ -389,4 +394,3 @@ The Vitest engine suite in GAME_ENGINE.md is the base. Add:
 
 Run targeted tests during implementation. At major milestones run npm test, npm run
 lint, and npm run build.
-

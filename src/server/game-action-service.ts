@@ -31,7 +31,9 @@ export type ActionServiceResult = { readonly view: ReturnType<typeof projectGame
 
 export async function applyPlayerAction(gameId: string, actorId: string, input: ParsedActionRequest): Promise<ActionServiceResult> {
   const receipt = await findActionReceipt(input.action.actionId);
-  if (receipt && (receipt.game_id !== gameId || receipt.actor_id !== actorId)) throw new HttpError(409, "ACTION_ID_CONFLICT");
+  if (receipt && (receipt.game_id !== gameId || receipt.actor_id !== actorId
+    || receipt.expected_version !== input.expectedVersion || receipt.action_type !== input.action.type
+    || (receipt.card_id !== null && receipt.card_id !== (input.action.cardId ?? null)))) throw new HttpError(409, "ACTION_ID_CONFLICT");
   const loaded = await loadCanonicalGame(gameId);
   if (!loaded.snapshots.some((item) => item.userId === actorId)) throw new HttpError(404, "GAME_NOT_FOUND");
   if (receipt) return { view: projectGameState(loaded.state, actorId, loaded.snapshots), stale: false };
@@ -45,6 +47,7 @@ export async function applyPlayerAction(gameId: string, actorId: string, input: 
   const committed = await commitGameAction({
     actionId: input.action.actionId, gameId, actorId, expectedVersion: input.expectedVersion,
     actionType: input.action.type, nextState: result.nextState, events: result.events,
+    ...(input.action.cardId ? { cardId: input.action.cardId } : {}),
     ...(result.nextState.phase === "GAME_COMPLETE" ? { result: result.nextState.gameResult } : {}),
   });
   const fresh = await loadCanonicalGame(gameId);

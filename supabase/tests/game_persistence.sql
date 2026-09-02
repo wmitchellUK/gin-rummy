@@ -1,5 +1,5 @@
 begin;
-select plan(9);
+select plan(17);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -22,8 +22,37 @@ insert into public.game_players(game_id, user_id, seat, display_name) values
  ('60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000002',1,'Joiner');
 insert into public.game_state(game_id, version, canonical_state) values ('60000000-0000-4000-8000-000000000001', 0, '{"version":0}');
 select is((select accepted_version from public.commit_game_action('70000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001',0,'DRAW_STOCK','{"gameId":"60000000-0000-4000-8000-000000000001","version":1}'::jsonb,'PLAYING','[{"type":"INITIAL_UPCARD_PASSED","stateVersion":1,"playerId":"50000000-0000-4000-8000-000000000001","visibility":{"kind":"PUBLIC"}}]'::jsonb,null)), 1, 'first same-version action commits');
+select is((select outcome from public.commit_game_action('70000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001',0,'DRAW_STOCK','{"gameId":"60000000-0000-4000-8000-000000000001","version":1}'::jsonb,'PLAYING','[{"type":"INITIAL_UPCARD_PASSED","stateVersion":1,"playerId":"50000000-0000-4000-8000-000000000001","visibility":{"kind":"PUBLIC"}}]'::jsonb,null)), 'IDEMPOTENT', 'an exact action retry is idempotent');
+select throws_ok($$select public.commit_game_action('70000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001',0,'DRAW_DISCARD','{"gameId":"60000000-0000-4000-8000-000000000001","version":1}'::jsonb,'PLAYING','[]'::jsonb,null)$$, 'P0001', 'ACTION_ID_CONFLICT', 'an action id cannot be replayed with another action type');
 select is((select outcome from public.commit_game_action('70000000-0000-4000-8000-000000000002','60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000002',0,'DRAW_STOCK','{"gameId":"60000000-0000-4000-8000-000000000001","version":1}'::jsonb,'PLAYING','[]'::jsonb,null)), 'STALE', 'second same-version action is stale');
 select is((select version from public.game_state where game_id = '60000000-0000-4000-8000-000000000001'), 1, 'only one action changed the checkpoint');
+
+select is((select accepted_version from public.commit_game_action('70000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001',1,'DISCARD','{"gameId":"60000000-0000-4000-8000-000000000001","version":2}'::jsonb,'PLAYING','[]'::jsonb,null,'A:CLUBS')), 2, 'a card action stores its complete receipt');
+select throws_ok($$select public.commit_game_action('70000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001',1,'DISCARD','{"gameId":"60000000-0000-4000-8000-000000000001","version":2}'::jsonb,'PLAYING','[]'::jsonb,null,'K:SPADES')$$, 'P0001', 'ACTION_ID_CONFLICT', 'an action id cannot be replayed with another card');
+
+-- Repeated/concurrent rematch acceptance used to create an unlimited number of
+-- canonical games from one request. The source row lock and unique index make
+-- acceptance idempotent even though each HTTP request proposes a fresh UUID.
+insert into public.games(id, invite_code, status, rules, created_by, rematch_requested_by)
+values ('80000000-0000-4000-8000-000000000001', 'REMATCH1', 'COMPLETE', '{}', '50000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001');
+insert into public.game_players(game_id, user_id, seat, display_name) values
+ ('80000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001',0,'Creator'),
+ ('80000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000002',1,'Joiner');
+insert into public.game_state(game_id, version, canonical_state)
+values ('80000000-0000-4000-8000-000000000001', 7, '{"version":7}');
+
+select is((select game_id from public.accept_rematch(
+  '80000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000002',
+  '80000000-0000-4000-8000-000000000002','REMATCH2',
+  '{"gameId":"80000000-0000-4000-8000-000000000002","version":1}'::jsonb,'[]'::jsonb
+)), '80000000-0000-4000-8000-000000000002'::uuid, 'the first rematch acceptance creates a game');
+select is((select game_id from public.accept_rematch(
+  '80000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000002',
+  '80000000-0000-4000-8000-000000000003','REMATCH3',
+  '{"gameId":"80000000-0000-4000-8000-000000000003","version":1}'::jsonb,'[]'::jsonb
+)), '80000000-0000-4000-8000-000000000002'::uuid, 'a repeated acceptance returns the existing rematch');
+select is((select count(*) from public.games where source_game_id = '80000000-0000-4000-8000-000000000001'), 1::bigint, 'only one rematch exists per source game');
+select is((select count(*) from public.games where id = '80000000-0000-4000-8000-000000000003'), 0::bigint, 'the repeated acceptance does not create its proposed game');
 
 select * from finish();
 rollback;

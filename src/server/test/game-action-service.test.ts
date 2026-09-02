@@ -14,7 +14,11 @@ const repository = vi.hoisted(() => ({
 vi.mock("../game-repository", () => repository);
 vi.mock("../realtime", () => ({ notifyGameChanged: vi.fn().mockResolvedValue(undefined) }));
 // The action service needs only HttpError here; avoid loading the Supabase client.
-vi.mock("../auth", () => ({ HttpError: class extends Error {} }));
+vi.mock("../auth", () => ({
+  HttpError: class extends Error {
+    constructor(readonly status: number, readonly code: string) { super(code); }
+  },
+}));
 
 import { applyPlayerAction } from "../game-action-service";
 
@@ -103,11 +107,29 @@ describe("authoritative game action service", () => {
     });
     if (!next.ok) throw new Error("fixture failed");
     persisted = next.nextState;
-    repository.findActionReceipt.mockResolvedValue({ game_id: gameId, actor_id: p2, accepted_version: acceptedVersion });
+    repository.findActionReceipt.mockResolvedValue({
+      game_id: gameId, actor_id: p2, expected_version: 1,
+      action_type: "PASS_INITIAL_UPCARD", card_id: null, accepted_version: acceptedVersion,
+    });
 
     const result = await applyPlayerAction(gameId, p2, action("99999999-9999-4999-8999-999999999999"));
 
     expect(result).toMatchObject({ stale: false, view: { version: acceptedVersion } });
+    expect(repository.commitGameAction).not.toHaveBeenCalled();
+  });
+
+  it("rejects replaying an action id with a different payload", async () => {
+    repository.findActionReceipt.mockResolvedValue({
+      game_id: gameId, actor_id: p2, expected_version: 1,
+      action_type: "DRAW_STOCK", card_id: null, accepted_version: 2,
+    });
+
+    await expect(applyPlayerAction(
+      gameId,
+      p2,
+      action("99999999-9999-4999-8999-999999999999"),
+    )).rejects.toMatchObject({ status: 409, code: "ACTION_ID_CONFLICT" });
+    expect(repository.loadCanonicalGame).not.toHaveBeenCalled();
     expect(repository.commitGameAction).not.toHaveBeenCalled();
   });
 
