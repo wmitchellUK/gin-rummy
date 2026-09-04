@@ -51,7 +51,7 @@ Use CSS custom properties/Tailwind theme equivalents. Texture, if used, must be 
 | Opponent | identity at upper left; 10–11 hidden cards centered across top; score card at upper right | identity and score on one row; compact hidden fan to its right or immediately below |
 | Public piles | stock and discard centered, side by side; prompt adjacent | centered pair below opponent; count/labels below each pile |
 | Turn/status | compact panel near piles/actions | full-width compact panel below piles |
-| Player | identity at lower left; 10–11 face-up cards span the near edge; compact sort beside card count | identity/score above hand; enlarged shallow fan/overlap within full width; compact sort beside card count |
+| Player | identity at lower left; 10–11 face-up cards span the near edge; card count and saved-order status nearby | identity/score above hand; enlarged shallow fan/overlap within full width; concise drag-to-organize guidance beside card count |
 | Actions | one or two contextual controls beside the player hand | sticky 60–70px bottom bar with one or two contextual controls and safe-area padding |
 
 The player hand owns the largest clear area. Keep cards in rank order or the user’s explicit order; overlap only enough to fit while leaving the upper-left rank and suit of every card visible. At 375px, distribute a 10-card hand across the available width with hand-size-aware overlap and a modest fan (maximum 7 degrees across the whole hand), not tiny cards. An 11th card may overlap more but remains individually selectable. A selected or keyboard-focused card lifts above its neighbors so its complete face and selection outline are visible. Do not use horizontal scrolling for a normal hand. Reflow before reducing card size.
@@ -64,16 +64,16 @@ Desktop may use `position: relative` for the table composition, but interactive 
 | --- | --- |
 | `GameTable` | Hosts the authoritative projected state, responsive table layout, connection status, and modal layer. Announces phase/turn changes; does not infer legality client-side. |
 | `OpponentArea` | Shows display name, dealer/current-turn text, match score, connection marker, and hidden-card count. Render card backs only—never identities—until a result legitimately reveals them. |
-| `PlayerArea` | Shows “You”, match score, dealer/current-turn label, `CardHand`, and a compact icon-only sort control. It is visually dominant. |
+| `PlayerArea` | Shows “You”, match score, dealer/current-turn label, `CardHand`, card count, and saved-order guidance. It is visually dominant. |
 | `Card` | Semantic button when selectable; otherwise an article/image-equivalent with accessible rank/suit name. Face uses cream, black/red pips, corner indices, and a high-contrast back. Selected cards lift 8px and receive gold outline; forbidden cards state why in text/accessible description. |
-| `CardHand` | Maintains server-provided order plus optional local, non-authoritative display order. Supports selectable cards, shallow fan, keyboard navigation, and reorder. Do not imply meld membership as fact unless server supplies it. |
+| `CardHand` | Maintains a local, non-authoritative per-game display order that survives refresh and remembers encountered card identities across later deals. Supports selection, a shallow fan, pointer/touch drag, arrow-key navigation, and Shift+Arrow reorder. Server-projected meld candidates are labeled only when their cards are contiguous in that private order. |
 | `StockPile` | Face-down stack, remaining count, and “Draw stock” control. It is enabled only when the current projection permits the action. |
 | `DiscardPile` | Top public card, label, and “Take discard” control. The card itself may activate the same action. |
 | `TurnPrompt` | Plain-language current phase: “Your turn — draw a card”, “Choose a card to discard”, “James is choosing a card”, or opening-pass instruction. Pair colored dot with text and `aria-live` announcement. |
 | `ScoreBadge` | Compact per-player match score; optional hand number and target in an adjacent score panel. Use numerals plus labels, never gold/position alone. |
 | `GameActions` | Contextual action group: opening pass/take, legal draw sources, selection guidance, discard confirmation, and an eligible knock or gin declaration. It preserves its controls in a disabled busy state but does not reserve space for actions irrelevant to the current phase. |
 | `WaitingRoom` | Replaces play with invite URL, code, Copy controls, `aria-live` waiting status, and safe refresh reassurance. It never displays a deck or hand. |
-| `HandResult` | Modal/drawer that freezes gameplay. Shows declaration/cancelled-hand outcome, both optimized melds, original and final deadwood, valid layoffs, score formula, updated totals, and each player’s acknowledgement. A cancelled hand explicitly says cards were not revealed and no points were awarded. |
+| `HandResult` | Focus-trapped centered dialog on desktop and near-full-height bottom sheet on mobile that freezes gameplay. Shows declaration/cancelled-hand outcome, both optimized melds, original and final deadwood, valid layoffs, score formula, updated totals, and each player’s acknowledgement. A cancelled hand explicitly says cards were not revealed and no points were awarded. |
 | `GameResult` | Final modal with winner, final scores, completed-hand summary, and rematch request/accept/decline state. No game-play controls remain active. |
 
 ## Interaction and state guidance
@@ -87,7 +87,8 @@ All user actions send an intent with the current version and idempotency key. Th
 | Draw stock | Enable stock only on a legal draw. On acceptance, add the new card to the player hand and switch prompt to discard; do not reveal stock order or animate a visible face from the pile. |
 | Take discard | Make the visible top discard and its labeled control activate the intent. On acceptance, move that known card into the player hand, mark it “cannot discard this turn,” and request a discard. |
 | Select / discard | In discard phase, card selection lifts and gets a gold outline; show a clear `Discard [rank and suit]` confirmation rather than discarding on first tap. Disable the just-taken discard and describe the restriction. After acceptance, move only the chosen card to the public pile. |
-| Reorder / sort | The labeled sort icon applies a predictable local visual order (rank then suit by default) without sending a game action. Preserve keyboard reorder instructions for assistive technology; never claim sorting changes scoring. |
+| Reorder | During the local player’s active phase, horizontal pointer/touch drag reorders cards after a movement threshold; Shift+Arrow provides the keyboard equivalent. Persist the private preference locally, retain absent card identities for later deals, and append unseen cards in server order. Reordering never sends a game action or changes scoring. |
+| Meld organization | The server projects every rule-valid candidate from the caller’s own hand. Highlight only candidates whose cards are adjacent in the private display order, collapse contained same-kind subgroups to the longest label, and retain genuine Run/Set overlaps. Labels are cosmetic and never replace server discard, knock, gin, or deadwood decisions. |
 | Knock / gin | After card selection, show Knock with the server-projected post-discard deadwood count or Gin only when that declaration is legal for the selected discard. Keep ordinary discard available so the player may decline to declare. |
 | Opponent action | Retain the player’s view and show a concise status (“James drew from stock”, “James is choosing a discard”, “Your turn”). Do not animate or expose an opponent stock-drawn card. |
 | Hand reveal / scoring | On server transition to hand complete, disable table controls, then open `HandResult`. Reveal cards only in the scored hand result and label melds, layoffs, deadwood, calculation, and updated score. |
@@ -98,15 +99,15 @@ All user actions send an intent with the current version and idempotency key. Th
 ## Motion, accessibility, and keyboard use
 
 - Meet WCAG 2.2 AA contrast. Text, icon, outline, and labels communicate suit, selection, turn, connection, and errors in addition to color. Use real buttons, labels, headings, and dialogs; decorative card texture is hidden from assistive technology.
-- Card buttons have names such as “7 of hearts, selected, eligible to discard.” Face-down opponent cards are announced as one grouped “James has 10 cards,” not ten indistinguishable controls. Pile controls name their visible card/count and action.
-- Keyboard order follows the visual/decision order. `Tab` reaches all controls; arrow keys move between cards in a hand; `Space`/`Enter` selects or activates; `Escape` clears a discard selection or closes a dismissible informational dialog. Reorder mode exposes move-left/move-right buttons/shortcuts with an announced new position. Provide visible `:focus-visible` gold/cream focus rings with a 3:1 contrast ratio.
+- Card buttons have names such as “7 of hearts, position 4 of 11, part of run, selected.” Face-down opponent cards are announced as one grouped “James has 10 cards,” not ten indistinguishable controls. Pile controls name their visible card/count and action.
+- Keyboard order follows the visual/decision order. `Tab` reaches all controls; arrow keys move between cards in a hand; `Space`/`Enter` selects or activates; `Escape` clears a discard selection or closes a dismissible informational dialog. Shift+Arrow reorders during the player’s active phase and announces the new position. Provide visible `:focus-visible` gold/cream focus rings with a 3:1 contrast ratio.
 - Trap focus in `HandResult` and `GameResult`, focus their title on open, and return focus to the invoking control when appropriate. Use polite live regions for turn/opponent/connection changes; assertive announcements only for action errors and blocking disconnection. Avoid repeating announcements after a refetch with unchanged state.
 - Respect `prefers-reduced-motion`: no dealing, fanning, lifting, modal, or score-count animation; update state immediately. Otherwise keep motion to 150–250ms opacity/transform transitions, never motion needed to understand rules or state.
 - Touch targets are at least 44×44px. Every hover affordance (card lift, pile highlight, tooltip) has an always-available tap, focus, or text equivalent. Test at 375px width, 200% zoom, keyboard-only, and screen-reader flows.
 
 ## Implementation guardrails
 
-Render only the player-safe server projection: own cards, public discard, public counts/scores, and cards revealed by a completed hand. Treat local selection, pending state, sort order, and animation as presentation only. Realtime may prompt a refetch, but the fetched canonical projection determines every visible card, phase, score, and enabled action.
+Render only the player-safe server projection: own cards and meld candidates derived from them, public discard, public counts/scores, and cards revealed by a completed hand. Treat local selection, pending state, manual order, meld visibility, and animation as presentation only. Realtime may prompt a refetch, but the fetched canonical projection determines every visible card, phase, score, and enabled action.
 
 ## Card Studio
 

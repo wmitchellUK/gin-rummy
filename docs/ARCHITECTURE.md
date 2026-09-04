@@ -395,9 +395,13 @@ src/server/game-projection.ts is the only serializer from GameState to browser d
 React code consumes PlayerGameView, never GameState.
 
 A projection includes public game identity/version/phase/rules, public scores, stock
-count, public discard pile, dealer/turn status, and the caller's sorted hand and legal
+count, public discard pile, dealer/turn status, and the caller's hand and legal
 controls. It includes only opponent name, seat, score, and card count. It includes the
 opening up-card and pass facts when public.
+
+During active play, the projection derives every rule-valid meld candidate from the
+caller's own hand. The browser may use those candidates for private, cosmetic grouping
+feedback, but it never submits display order or inferred scoring state.
 
 During the caller's active discard decision, the projection also derives an outcome for
 each legal discard candidate: minimum post-discard deadwood and whether that candidate
@@ -406,8 +410,9 @@ no opponent or stock information; the server still validates the submitted decla
 against canonical state.
 
 After an engine-scored hand, it includes engine-permitted revealed hands, melds,
-deadwood, layoffs, declaration, and score. A cancelled result includes its reason and
-scores but neither hand. Game-complete data is likewise participant-safe.
+deadwood, layoffs, declaration, score, and next-hand readiness. A cancelled result
+includes its reason and scores but neither hand. Game-complete data is projected to a
+typed, named score and completed-hand summary rather than returning canonical state.
 
 A projection never includes an opponent current hand, opponent private stock draw,
 future stock/deck order, deal plan, raw event, raw action, or canonical JSON.

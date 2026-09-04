@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpDown } from "lucide-react";
-import { useCallback, useEffect, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { ensureAnonymousSession } from "@/lib/supabase/anonymous";
 import {
-  gameplayControlsAreAvailable, selectedDiscardActionAvailability, type HandResultView,
+  gameplayControlsAreAvailable, selectedDiscardActionAvailability, type HandResultView, type HandScoreView,
   type LegalControl, type PlayerGameView, type PublicCard, type PublicMeld, type RevealedPlayerHandView,
 } from "@/src/shared/game-view";
 import { CardArtProvider } from "./card-art-provider";
+import { CardHand, moveVisibleCard, orderVisibleCards, reconcileKnownOrder } from "./card-hand";
 import { ContextualGameActions } from "./game-actions";
 import { CardFace, CardMark, cardLabel } from "./game-card";
 
@@ -34,6 +34,7 @@ function GameScreenContent({ gameId }: { gameId: string }) {
   const [authReady, setAuthReady] = useState(false);
   const [error, setError] = useState("");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [loadedOrderGameId, setLoadedOrderGameId] = useState<string>();
 
   const refresh = useCallback(async () => {
     const { response, body } = await jsonRequest(`/api/games/${gameId}`);
@@ -58,17 +59,26 @@ function GameScreenContent({ gameId }: { gameId: string }) {
   }, [authReady, refresh]);
 
   useEffect(() => {
-    if (!game) return;
-    setOrder((current) => {
-      const ids = game.you.hand.map((card) => card.id);
-      return [...current.filter((id) => ids.includes(id)), ...ids.filter((id) => !current.includes(id))];
+    if (!game || game.gameId !== gameId) return;
+    if (loadedOrderGameId === gameId) setOrder((current) => {
+      const next = reconcileKnownOrder(current, game.you.hand);
+      return sameOrder(current, next) ? current : next;
     });
     try {
       const prior = JSON.parse(localStorage.getItem("gin-rummy:recent-games") ?? "[]") as RecentGame[];
       const entry: RecentGame = { gameId: game.gameId, opponent: game.opponent?.displayName ?? "Waiting for opponent", updatedAt: Date.now() };
       localStorage.setItem("gin-rummy:recent-games", JSON.stringify([entry, ...prior.filter((item) => item.gameId !== entry.gameId)].slice(0, 4)));
     } catch { /* Recent tables are a convenience, never game state. */ }
-  }, [game]);
+  }, [game, gameId, loadedOrderGameId]);
+
+  useEffect(() => {
+    setOrder(readSavedOrder(gameId));
+    setLoadedOrderGameId(gameId);
+  }, [gameId]);
+
+  useEffect(() => {
+    if (loadedOrderGameId === gameId) saveOrder(gameId, order);
+  }, [gameId, loadedOrderGameId, order]);
 
   async function action(type: LegalControl, cardId?: string) {
     if (!game || busy) return;
@@ -90,11 +100,9 @@ function GameScreenContent({ gameId }: { gameId: string }) {
       if (result.body.rematchGameId) router.push(`/game/${result.body.rematchGameId}`);
     } catch (cause) { setError(actionMessage(cause)); } finally { setBusy(false); }
   }
-  const sortHand = () => setOrder((current) => [...current].sort((first, second) => cardSortValue(game?.you.hand.find((card) => card.id === first)) - cardSortValue(game?.you.hand.find((card) => card.id === second))));
-  const moveCard = (cardId: string, direction: -1 | 1) => setOrder((current) => {
-    const from = current.indexOf(cardId); const to = from + direction;
-    if (from < 0 || to < 0 || to >= current.length) return current;
-    const next = [...current]; [next[from], next[to]] = [next[to]!, next[from]!]; return next;
+  const moveCard = (cardId: string, targetIndex: number) => setOrder((current) => {
+    const visibleCards = orderVisibleCards(game?.you.hand ?? [], current);
+    return moveVisibleCard(current, visibleCards, cardId, targetIndex);
   });
 
   if (!game) return <main className="game-shell"><p className="simple-panel" role={error ? "alert" : undefined}>{error || "Preparing your table…"}</p></main>;
@@ -102,7 +110,7 @@ function GameScreenContent({ gameId }: { gameId: string }) {
   const discard = game.discardPile[0];
   const selected = game.you.hand.find((card) => card.id === selectedCardId);
   const selectedActions = selectedDiscardActionAvailability(game, selectedCardId);
-  const orderedHand = [...game.you.hand].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  const orderedHand = orderVisibleCards(game.you.hand, order);
   const youAreActive = game.legalControls.length > 0;
   const isPlaying = gameplayControlsAreAvailable(game);
 
@@ -120,8 +128,8 @@ function GameScreenContent({ gameId }: { gameId: string }) {
         </div><TurnPrompt game={game} active={youAreActive} selected={selected} selectedActions={selectedActions} />
       </section>
       <section className="player-area" aria-labelledby="your-hand">
-        <div className="player-hand-heading"><div className="player-identity"><div className="avatar you-avatar" aria-hidden="true">{initials(game.you.displayName)}</div><div className="identity-copy"><p className="eyebrow">You {youAreActive ? "· Your turn" : "· At the table"}</p><div className="identity-line"><h2 id="your-hand">{game.you.displayName}</h2><span className="identity-score"><span>Score</span>{game.you.score}</span></div></div></div><div className="hand-tools"><span>{game.you.hand.length} cards</span><button className="sort-button" aria-label="Sort hand by rank and suit" title="Sort hand by rank and suit" onClick={sortHand}><ArrowUpDown aria-hidden="true" /></button></div></div>
-        <CardHand cards={orderedHand} selectedCardId={selectedCardId} canDiscard={can("DISCARD")} restrictedId={game.turnRestrictions?.cannotDiscardCardId} drawnId={game.drawnStockCardId} onSelect={setSelectedCardId} onMove={moveCard} />
+        <div className="player-hand-heading"><div className="player-identity"><div className="avatar you-avatar" aria-hidden="true">{initials(game.you.displayName)}</div><div className="identity-copy"><p className="eyebrow">You {youAreActive ? "· Your turn" : "· At the table"}</p><div className="identity-line"><h2 id="your-hand">{game.you.displayName}</h2><span className="identity-score"><span>Score</span>{game.you.score}</span></div></div></div><div className="hand-tools"><span>{game.you.hand.length} cards</span><small>{youAreActive ? "Drag to organize" : "Order saved"}</small></div></div>
+        <CardHand cards={orderedHand} meldCandidates={game.you.meldCandidates ?? []} selectedCardId={selectedCardId} canDiscard={can("DISCARD")} canReorder={isPlaying && youAreActive && !busy} restrictedId={game.turnRestrictions?.cannotDiscardCardId} drawnId={game.drawnStockCardId} onSelect={setSelectedCardId} onMove={moveCard} />
       </section>
       {error && <p role="alert" className="game-error">{error}</p>}
       <ContextualGameActions legalControls={game.legalControls} busy={busy} discard={discard} selected={selected} selectedActions={selectedActions} onAction={action} />
@@ -133,21 +141,95 @@ function GameScreenContent({ gameId }: { gameId: string }) {
 function OpponentHand({ count }: { count: number }) { return <div className="opponent-hand" aria-label={`Opponent has ${count} cards`}>{Array.from({ length: count }, (_, index) => <span className="opponent-card" style={{ "--card-index": index, "--card-count": count } as CSSProperties} key={index}><CardBack /></span>)}</div>; }
 function ScoreHud({ game }: { game: PlayerGameView }) { return <aside className="score-hud" aria-label="Match scores"><p>First to {game.rules.matchTarget}</p><dl><div><dt>You</dt><dd>{game.you.score}</dd></div><div><dt>{game.opponent?.displayName ?? "Opponent"}</dt><dd>{game.opponent?.score ?? 0}</dd></div></dl></aside>; }
 function TurnPrompt({ game, active, selected, selectedActions }: { game: PlayerGameView; active: boolean; selected?: PublicCard; selectedActions: ReturnType<typeof selectedDiscardActionAvailability> }) { return <div className={`turn-prompt${active ? " is-active" : ""}`} role="status" aria-live="polite" aria-atomic="true"><span className="turn-dot" /><p><strong>{active ? "Your turn" : `${game.opponent?.displayName ?? "Opponent"} is playing`}</strong><span aria-hidden="true"> · </span>{turnInstruction(game, selected, selectedActions)}</p></div>; }
-function CardHand({ cards, selectedCardId, canDiscard, restrictedId, drawnId, onSelect, onMove }: { cards: readonly PublicCard[]; selectedCardId?: string; canDiscard: boolean; restrictedId?: string; drawnId?: string; onSelect: (cardId: string | undefined) => void; onMove: (cardId: string, direction: -1 | 1) => void }) {
-  function keyDown(event: KeyboardEvent<HTMLButtonElement>, card: PublicCard, index: number) { if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return; event.preventDefault(); const direction = event.key === "ArrowLeft" ? -1 : 1; if (event.shiftKey) { onMove(card.id, direction); return; } const target = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[data-hand-card]")[index + direction]; target?.focus(); }
-  return <div className={`card-hand cards-${cards.length}`} style={{ "--hand-count": cards.length } as CSSProperties}><span id="hand-keyboard-help" className="visually-hidden">Use the arrow keys to move between cards. Hold Shift while pressing an arrow key to reorder a card.</span>{cards.map((card, index) => { const selected = card.id === selectedCardId; const marker = card.id === restrictedId ? "Hold" : card.id === drawnId ? "Drawn" : undefined; return <button data-hand-card key={card.id} className={`playing-card${selected ? " selected-card" : ""}${marker ? " turn-card-indicated" : ""}`} style={{ "--card-index": index } as CSSProperties} aria-label={`${cardLabel(card)}${marker ? `, ${marker.toLowerCase()}${marker === "Hold" ? ", cannot be discarded this turn" : ""}` : ""}`} aria-describedby="hand-keyboard-help" aria-pressed={selected} disabled={!canDiscard} onKeyDown={(event) => keyDown(event, card, index)} onClick={() => onSelect(selected ? undefined : card.id)}><CardFace card={card} marker={marker} /></button>; })}</div>;
-}
 function CardBack() { return <span className="card-back" aria-hidden="true"><span>R</span></span>; }
 function WaitingGame({ inviteUrl }: { inviteUrl: string | null }) { const [copied, setCopied] = useState(false); async function copyInvite() { if (!inviteUrl) return; await navigator.clipboard.writeText(inviteUrl); setCopied(true); } return <section className="waiting-room" aria-labelledby="waiting-title"><div className="waiting-seal">R</div><p className="eyebrow">Private two-player table</p><h1 id="waiting-title">Your table is set.</h1><p>Share this private invitation with one friend. You can safely leave this page and return later.</p>{inviteUrl ? <><label className="invite-field"><span>Invite link</span><code>{inviteUrl}</code></label><button className="action-button primary" onClick={() => void copyInvite()}>{copied ? "Invitation copied" : "Copy invitation"}</button></> : <p className="table-note">Your private invitation is available in the browser that created this table.</p>}<p className="waiting-status" role="status"><i /> Waiting for an opponent to take a seat</p></section>; }
-function HandCompleteResult({ game, onStartNextHand, canStartNextHand }: { game: PlayerGameView; onStartNextHand: () => void; canStartNextHand: boolean }) { const result = game.handResult; if (!result) return null; if (result.kind === "CANCELLED") return <ResultOverlay title="Hand over" kicker="No score awarded"><p>The stock reached two cards. Cards were not revealed.</p><MatchScores scores={result.scoresAfter} /><button className="action-button primary" disabled={!canStartNextHand} onClick={onStartNextHand}>{canStartNextHand ? "Start next hand" : "Waiting for opponent"}</button></ResultOverlay>; const declarer = result.players.find((player) => player.playerId === result.declarerId)!; const opponent = result.players.find((player) => player.playerId !== result.declarerId)!; return <ResultOverlay title="Hand over" kicker={`${result.declarerName} ${result.declaration === "KNOCK" ? "knocked" : "went gin"}`}><div className="result-score"><strong>{result.winnerName}</strong><span>+{result.pointsAwarded}</span><small>{scoreFormula(result, declarer, opponent, game)}</small></div><div className="revealed-hands">{result.players.map((player) => <RevealedHand key={player.playerId} player={player} />)}</div><MatchScores scores={result.scoresAfter} /><button className="action-button primary" disabled={!canStartNextHand} onClick={onStartNextHand}>{canStartNextHand ? "Start next hand" : "Waiting for opponent"}</button></ResultOverlay>; }
-function GameResult({ game, busy, onRematch }: { game: PlayerGameView; busy: boolean; onRematch: (response: "REQUEST" | "ACCEPT") => Promise<void> }) { return <ResultOverlay title="Match complete" kicker="A fine game"><Result value={game.gameResult} />{!game.rematch && <button className="action-button primary" onClick={() => void onRematch("REQUEST")} disabled={busy}>Request rematch</button>}{game.rematch?.requestedBy === "YOU" && <p className="waiting-status"><i /> Rematch requested — waiting for your opponent</p>}{game.rematch?.requestedBy === "OPPONENT" && <button className="action-button primary" onClick={() => void onRematch("ACCEPT")} disabled={busy}>Accept rematch</button>}<Link className="quiet-link" href="/">Return home</Link></ResultOverlay>; }
-function ResultOverlay({ title, kicker, children }: { title: string; kicker: string; children: React.ReactNode }) { return <section className="result-backdrop"><div className="result-panel" role="dialog" aria-modal="true" aria-labelledby="result-title"><p className="eyebrow">{kicker}</p><h1 id="result-title">{title}</h1>{children}</div></section>; }
-function RevealedHand({ player }: { player: RevealedPlayerHandView }) { return <article className="revealed-hand"><h2>{player.displayName}</h2><div className="result-cards">{player.revealedHand.map((card) => <span className="mini-card" role="img" aria-label={cardLabel(card)} key={card.id}><CardFace card={card} /></span>)}</div><p><b>Melds:</b> {player.melds.length ? player.melds.map((meld, index) => <span key={index}><Meld cards={meld.cards} kind={meld.kind} />{index < player.melds.length - 1 ? " · " : ""}</span>) : "None"}</p><p><b>Deadwood:</b> {player.finalDeadwoodValue}</p>{player.layoffs.length > 0 && <p><b>Layoffs:</b> {player.layoffs.length}</p>}</article>; }
-function MatchScores({ scores }: { scores: HandResultView["scoresAfter"] }) { return <section className="match-scores" aria-label="Match score">{scores.map((score) => <div key={score.playerId}><span>{score.displayName}</span><strong>{score.score}</strong></div>)}</section>; }
+export function HandCompleteResult({ game, onStartNextHand, canStartNextHand }: { game: PlayerGameView; onStartNextHand: () => void; canStartNextHand: boolean }) {
+  const result = game.handResult;
+  if (!result) return null;
+  const readiness = game.nextHandReadiness;
+  const readyLabel = readiness?.you ? `Ready — waiting for ${game.opponent?.displayName ?? "opponent"}` : "Ready for next hand";
+  const footer = <>
+    <Readiness readiness={readiness} opponentName={game.opponent?.displayName ?? "Opponent"} />
+    <button className="action-button primary result-primary" disabled={!canStartNextHand} onClick={onStartNextHand}>{canStartNextHand ? readyLabel : `Waiting for ${game.opponent?.displayName ?? "opponent"}`}</button>
+  </>;
+  if (result.kind === "CANCELLED") return <ResultOverlay title="Hand over" kicker="No score awarded">
+    <p>The stock reached two cards. Both hands stay private and the score is unchanged.</p>
+    <MatchScores scores={result.scoresAfter} />
+    {footer}
+  </ResultOverlay>;
+  const declarer = result.players.find((player) => player.playerId === result.declarerId)!;
+  const opponent = result.players.find((player) => player.playerId !== result.declarerId)!;
+  return <ResultOverlay title="Hand over" kicker={`${result.declarerName} ${result.declaration === "KNOCK" ? "knocked" : "went gin"}`}>
+    <div className="result-score"><strong>{result.winnerName} wins the hand</strong><span>+{result.pointsAwarded}</span><small>{scoreFormula(result, declarer, opponent, game)}</small></div>
+    <div className="revealed-hands">{result.players.map((player) => <RevealedHand key={player.playerId} player={player} />)}</div>
+    <MatchScores scores={result.scoresAfter} />
+    {footer}
+  </ResultOverlay>;
+}
+export function GameResult({ game, busy, onRematch }: { game: PlayerGameView; busy: boolean; onRematch: (response: "REQUEST" | "ACCEPT") => Promise<void> }) {
+  const result = game.gameResult;
+  if (!result) return null;
+  return <ResultOverlay title="Match complete" kicker="A fine game">
+    <div className="match-winner"><span>Winner</span><strong>{result.winnerName}</strong><small>First to {result.matchTarget}</small></div>
+    <MatchScores scores={result.finalScores} />
+    <section className="hand-history" aria-labelledby="hand-history-title"><h2 id="hand-history-title">Hand history</h2>{result.completedHands.map((hand) => <div key={hand.handNumber}><span>Hand {hand.handNumber}</span><strong>{hand.kind === "CANCELLED" ? "No score" : `${hand.winnerName} +${hand.pointsAwarded}`}</strong><small>{hand.kind === "CANCELLED" ? "Stock exhausted" : hand.scoringReason === "GIN" ? "Gin" : hand.scoringReason === "UNDERCUT" ? "Undercut" : "Knock"}</small></div>)}</section>
+    {!game.rematch && <button className="action-button primary result-primary" onClick={() => void onRematch("REQUEST")} disabled={busy}>Request rematch</button>}
+    {game.rematch?.requestedBy === "YOU" && <p className="waiting-status"><i /> Rematch requested — waiting for your opponent</p>}
+    {game.rematch?.requestedBy === "OPPONENT" && <button className="action-button primary result-primary" onClick={() => void onRematch("ACCEPT")} disabled={busy}>Accept rematch</button>}
+    <Link className="quiet-link" href="/">Return home</Link>
+  </ResultOverlay>;
+}
+function ResultOverlay({ title, kicker, children }: { title: string; kicker: string; children: React.ReactNode }) {
+  const titleId = useId();
+  const panel = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const root = panel.current;
+    const backdrop = root?.parentElement;
+    const siblings = Array.from(backdrop?.parentElement?.children ?? [])
+      .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== backdrop)
+      .map((element) => ({ element, ariaHidden: element.getAttribute("aria-hidden"), inert: element.inert }));
+    siblings.forEach(({ element }) => { element.setAttribute("aria-hidden", "true"); element.inert = true; });
+    titleRef.current?.focus();
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Tab") return;
+      const items = Array.from(root?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])') ?? []);
+      if (!items.length) { event.preventDefault(); titleRef.current?.focus(); return; }
+      const first = items[0]!; const last = items.at(-1)!;
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === titleRef.current)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+    root?.addEventListener("keydown", onKeyDown);
+    return () => {
+      root?.removeEventListener("keydown", onKeyDown);
+      siblings.forEach(({ element, ariaHidden, inert }) => { if (ariaHidden === null) element.removeAttribute("aria-hidden"); else element.setAttribute("aria-hidden", ariaHidden); element.inert = inert; });
+      previouslyFocused?.focus();
+    };
+  }, []);
+  return <section className="result-backdrop"><div ref={panel} className="result-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}><div className="result-handle" aria-hidden="true" /><p className="eyebrow">{kicker}</p><h1 ref={titleRef} id={titleId} tabIndex={-1}>{title}</h1>{children}</div></section>;
+}
+function RevealedHand({ player }: { player: RevealedPlayerHandView }) { return <article className="revealed-hand"><h2>{player.displayName}</h2><ResultCards cards={player.revealedHand} /><dl className="hand-breakdown"><div><dt>Melds</dt><dd>{player.melds.length ? player.melds.map((meld, index) => <span className="result-meld" key={index}><Meld cards={meld.cards} kind={meld.kind} /></span>) : "None"}</dd></div><div><dt>Original deadwood</dt><dd><CardMarks cards={player.originalDeadwoodCards} empty="None" /> <b>{player.originalDeadwoodValue} pts</b></dd></div>{player.layoffs.length > 0 && <div><dt>Layoffs</dt><dd>{player.layoffs.map((layoff) => <span className="result-layoff" key={layoff.card.id}><CardMark card={layoff.card} /> onto <Meld cards={layoff.resultingMeld.cards} kind={layoff.resultingMeld.kind} /></span>)}</dd></div>}<div><dt>Final deadwood</dt><dd><CardMarks cards={player.finalDeadwoodCards} empty="None" /> <b>{player.finalDeadwoodValue} pts</b></dd></div></dl></article>; }
+function ResultCards({ cards }: { cards: readonly PublicCard[] }) { return <div className="result-cards">{cards.map((card) => <span className="mini-card" role="img" aria-label={cardLabel(card)} key={card.id}><CardFace card={card} /></span>)}</div>; }
+function CardMarks({ cards, empty }: { cards: readonly PublicCard[]; empty: string }) { return <>{cards.length ? cards.map((card) => <CardMark card={card} key={card.id} />) : empty}</>; }
+function Readiness({ readiness, opponentName }: { readiness: PlayerGameView["nextHandReadiness"]; opponentName: string }) { return <div className="readiness" aria-label="Next hand readiness"><span className={readiness?.you ? "is-ready" : ""}>You {readiness?.you ? "ready" : "reviewing"}</span><span className={readiness?.opponent ? "is-ready" : ""}>{opponentName} {readiness?.opponent ? "ready" : "reviewing"}</span></div>; }
+function MatchScores({ scores }: { scores: readonly HandScoreView[] }) { return <section className="match-scores" aria-label="Match score">{scores.map((score) => <div key={score.playerId}><span>{score.displayName}</span><strong>{score.score}</strong></div>)}</section>; }
 function scoreFormula(result: Extract<HandResultView, { kind: "SCORED" }>, declarer: RevealedPlayerHandView, opponent: RevealedPlayerHandView, game: PlayerGameView) { if (result.scoringReason === "KNOCK") return `${opponent.finalDeadwoodValue} − ${declarer.originalDeadwoodValue} = ${result.pointsAwarded}`; if (result.scoringReason === "UNDERCUT") return `${declarer.originalDeadwoodValue} − ${opponent.finalDeadwoodValue} + ${game.rules.undercutBonus} = ${result.pointsAwarded}`; return `${opponent.originalDeadwoodValue} + ${game.rules.ginBonus} = ${result.pointsAwarded}`; }
-function Result({ value }: { value: unknown }) { if (!value || typeof value !== "object") return <p>The final score has been recorded.</p>; const result = value as { finalScores?: Record<string, number>; matchTarget?: number }; return <p>{result.finalScores ? `Final score: ${Object.values(result.finalScores).join(" – ")}.` : "The final score has been recorded."} {result.matchTarget ? `First to ${result.matchTarget}.` : ""}</p>; }
 function turnInstruction(game: PlayerGameView, selected?: PublicCard, selectedActions?: ReturnType<typeof selectedDiscardActionAvailability>) { if (game.phase === "OPENING_NON_DEALER" || game.phase === "OPENING_DEALER") return game.legalControls.length ? "Take the up-card or pass" : "Considering the up-card"; if (game.phase === "AWAITING_DRAW") return game.legalControls.length ? "Draw a card" : "Choosing a draw"; if (game.phase === "AWAITING_DISCARD") { if (!game.legalControls.length) return "Choosing a discard"; if (selectedActions?.isProhibitedDiscard) return "Choose another card"; if (selectedActions?.canGin) return "You can Gin!"; if (selectedActions?.canKnock) return "Discard or knock"; return selected ? "Discard the selected card" : "Choose a card to discard"; } return "Review the hand result"; }
-function cardSortValue(card?: PublicCard) { if (!card) return 999; const ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]; const suits = ["CLUBS", "DIAMONDS", "HEARTS", "SPADES"]; return ranks.indexOf(card.rank) * 4 + suits.indexOf(card.suit); }
 function initials(value: string) { return value.slice(0, 2).toUpperCase(); }
 function Meld({ kind, cards }: Pick<PublicMeld, "kind" | "cards">) { return <>{kind === "RUN" ? "Run" : "Set"}: {cards.map((card) => <CardMark card={card} key={card.id} />)}</>; }
 function actionMessage(cause: unknown) { if (!(cause instanceof Error)) return "Action failed. Please try again."; if (cause.message === "STALE_VERSION") return "The game changed. The latest state has been loaded."; if (cause.message === "WRONG_PLAYER") return "It is not your turn."; if (cause.message === "KNOCK_DEADWOOD_TOO_HIGH") return "That hand cannot knock yet."; if (cause.message === "GIN_REQUIRES_ZERO_DEADWOOD") return "Gin requires zero deadwood."; return "That action is not available right now."; }
+
+const handOrderKey = (gameId: string) => `gin-rummy:hand-order:v1:${gameId}`;
+function readSavedOrder(gameId: string): string[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(handOrderKey(gameId)) ?? "[]");
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+  } catch { return []; }
+}
+function saveOrder(gameId: string, order: readonly string[]) {
+  try { localStorage.setItem(handOrderKey(gameId), JSON.stringify(order)); } catch { /* Display preferences must never block play. */ }
+}
+function sameOrder(left: readonly string[], right: readonly string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}

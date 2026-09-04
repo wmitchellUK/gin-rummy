@@ -76,6 +76,33 @@ test("two anonymous browsers create, join, synchronize an action, and recover af
   const secondPass = await firstEnabled([a, b], /^Pass$/);
   await secondPass.button.click();
   const draw = await firstEnabled([a, b], /Draw stock/);
+
+  const handBeforeDrag = draw.page.locator(".card-hand [data-hand-card]");
+  await expect(handBeforeDrag).toHaveCount(10);
+  await expect(draw.page.locator(".sort-button")).toHaveCount(0);
+  await expect(draw.page.locator(".opponent-area .meld-label")).toHaveCount(0);
+  const firstCardName = (await handBeforeDrag.first().getAttribute("aria-label"))!.split(", position")[0]!;
+  const firstCardId = (await handBeforeDrag.first().getAttribute("data-card-id"))!;
+  const firstBox = await handBeforeDrag.first().boundingBox();
+  const lastBox = await handBeforeDrag.last().boundingBox();
+  if (!firstBox || !lastBox) throw new Error("Hand cards were not laid out for dragging.");
+  // Overlapped hands expose the left rank corner of every card except the final one.
+  await draw.page.mouse.move(firstBox.x + 6, firstBox.y + 18);
+  await draw.page.mouse.down();
+  await draw.page.mouse.move(lastBox.x + lastBox.width / 2, lastBox.y + lastBox.height / 2, { steps: 8 });
+  await draw.page.mouse.up();
+  await expect(handBeforeDrag.last()).toHaveAttribute("aria-label", new RegExp(`^${firstCardName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}, position 10 of 10`));
+  await expect.poll(() => draw.page.evaluate(() => {
+    const gameId = location.pathname.split("/").at(-1);
+    return (JSON.parse(localStorage.getItem(`gin-rummy:hand-order:v1:${gameId}`) ?? "[]") as string[]).at(-1) ?? null;
+  })).toBe(firstCardId);
+  await draw.page.reload();
+  await expect.poll(() => draw.page.evaluate(() => {
+    const gameId = location.pathname.split("/").at(-1);
+    return (JSON.parse(localStorage.getItem(`gin-rummy:hand-order:v1:${gameId}`) ?? "[]") as string[]).at(-1) ?? null;
+  })).toBe(firstCardId);
+  await expect(draw.page.locator(".card-hand [data-hand-card]").last()).toHaveAttribute("aria-label", new RegExp(`^${firstCardName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}, position 10 of 10`));
+
   await draw.button.click();
   await expect(draw.page.locator(".action-guidance")).toHaveText("Select a card to discard");
   const handCard = draw.page.locator(".card-hand [data-hand-card]").first();

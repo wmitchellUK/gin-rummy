@@ -90,6 +90,27 @@ describe("browser game projection", () => {
     for (const card of completed.stock) expect(publicResult).not.toContain(card.id);
     expect(publicResult).not.toContain("discardPile");
     expect(publicResult).not.toContain("stock");
+
+    const acknowledged = { ...completed, nextHandAcknowledgements: [P1] } as GameState;
+    expect(projectGameState(acknowledged, P1, players).nextHandReadiness).toEqual({ you: true, opponent: false });
+    expect(projectGameState(acknowledged, P2, players).nextHandReadiness).toEqual({ you: false, opponent: true });
+
+    const complete = {
+      ...completed,
+      phase: "GAME_COMPLETE" as const,
+      gameResult: {
+        winnerId: scored.result.winnerId,
+        loserId: P2,
+        finalScores: scored.result.scoresAfter,
+        matchTarget: DEFAULT_GAME_RULES.matchTarget,
+        completedHands: [scored.result],
+      },
+    } as GameState;
+    expect(projectGameState(complete, P1, players).gameResult).toMatchObject({
+      winnerName: "Ada",
+      finalScores: [{ displayName: "Ada", score: 2 }, { displayName: "Bea", score: 46 }],
+      completedHands: [{ kind: "SCORED", winnerName: "Ada", pointsAwarded: 2 }],
+    });
   });
 
   it("projects a discard-pile draw restriction only to the active player", () => {
@@ -127,6 +148,8 @@ describe("browser game projection", () => {
       { cardId: "K:DIAMONDS", deadwoodValue: 9, declaration: "KNOCK" },
       { cardId: "A:HEARTS", deadwoodValue: 14, declaration: null },
     ]));
+    expect(active.you.meldCandidates?.some((meld) => meld.kind === "RUN" && meld.cards.map((card) => card.id).join("|") === "A:HEARTS|2:HEARTS|3:HEARTS")).toBe(true);
+    expect(JSON.stringify(active.you.meldCandidates)).not.toContain("Q:SPADES");
     expect(projectGameState(state, P2, players).discardOutcomes).toBeUndefined();
   });
 

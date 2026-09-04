@@ -46,6 +46,30 @@ export interface HandScoreView {
   readonly score: number;
 }
 
+export type CompletedHandSummaryView =
+  | {
+    readonly kind: "SCORED";
+    readonly handNumber: number;
+    readonly declaration: "KNOCK" | "GIN";
+    readonly winnerId: string;
+    readonly winnerName: string;
+    readonly scoringReason: "GIN" | "KNOCK" | "UNDERCUT";
+    readonly pointsAwarded: number;
+  }
+  | {
+    readonly kind: "CANCELLED";
+    readonly handNumber: number;
+    readonly pointsAwarded: 0;
+  };
+
+export interface GameResultView {
+  readonly winnerId: string;
+  readonly winnerName: string;
+  readonly finalScores: readonly [HandScoreView, HandScoreView];
+  readonly matchTarget: number;
+  readonly completedHands: readonly CompletedHandSummaryView[];
+}
+
 export interface ScoredHandResultView {
   readonly kind: "SCORED";
   readonly handNumber: number;
@@ -77,7 +101,14 @@ export interface PlayerGameView {
   readonly status: "WAITING" | "PLAYING" | "HAND_COMPLETE" | "COMPLETE";
   readonly phase: string;
   readonly rules: { readonly knockThreshold: number; readonly ginBonus: number; readonly undercutBonus: number; readonly matchTarget: number };
-  readonly you: { readonly seat: 0 | 1; readonly displayName: string; readonly score: number; readonly hand: readonly PublicCard[] };
+  readonly you: {
+    readonly seat: 0 | 1;
+    readonly displayName: string;
+    readonly score: number;
+    readonly hand: readonly PublicCard[];
+    /** Rule-valid groups derived only from the caller's own cards. */
+    readonly meldCandidates?: readonly PublicMeld[];
+  };
   readonly opponent?: { readonly seat: 0 | 1; readonly displayName: string; readonly score: number; readonly cardCount: number };
   readonly dealerId: string | null;
   readonly currentPlayerId?: string;
@@ -92,7 +123,8 @@ export interface PlayerGameView {
   /** Active-player-only, server-derived outcomes for each legal discard candidate. */
   readonly discardOutcomes?: readonly DiscardOutcomeView[];
   readonly handResult?: HandResultView;
-  readonly gameResult?: unknown;
+  readonly nextHandReadiness?: { readonly you: boolean; readonly opponent: boolean };
+  readonly gameResult?: GameResultView;
   /** Rematch state is participant-safe metadata, never canonical game state. */
   readonly rematch?: { readonly requestedBy: "YOU" | "OPPONENT" };
 }
