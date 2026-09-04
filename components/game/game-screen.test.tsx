@@ -93,25 +93,25 @@ describe("game result surfaces", () => {
     expect(screen.getByRole("button", { name: "Request rematch" })).toBeEnabled();
   });
 
-  it("offers an immediate replay against Nia instead of multiplayer negotiation", () => {
+  it("offers an immediate replay against Naia instead of multiplayer negotiation", () => {
     const onRematch = vi.fn();
     const game: PlayerGameView = {
       ...baseGame(),
       mode: "SINGLE_PLAYER",
       status: "COMPLETE",
       phase: "GAME_COMPLETE",
-      opponent: { seat: 1, displayName: "Nia", kind: "BOT", score: 18, cardCount: 10 },
+      opponent: { seat: 1, displayName: "Naia", kind: "BOT", score: 18, cardCount: 10 },
       legalControls: [],
       gameResult: {
         winnerId: "p1",
         winnerName: "Will",
-        finalScores: [{ playerId: "p1", displayName: "Will", score: 100 }, { playerId: "p2", displayName: "Nia", score: 18 }],
+        finalScores: [{ playerId: "p1", displayName: "Will", score: 100 }, { playerId: "p2", displayName: "Naia", score: 18 }],
         matchTarget: 100,
         completedHands: [],
       },
     };
     render(<GameResult game={game} busy={false} onRematch={onRematch} />);
-    screen.getByRole("button", { name: "Play Nia again" }).click();
+    screen.getByRole("button", { name: "Play Naia again" }).click();
     expect(onRematch).toHaveBeenCalledWith("PLAY_AGAIN");
     expect(screen.queryByRole("button", { name: "Request rematch" })).not.toBeInTheDocument();
   });

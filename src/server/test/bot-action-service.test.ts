@@ -23,7 +23,7 @@ const botId = "22222222-2222-4222-8222-222222222222" as PlayerId;
 const gameId = "99999999-9999-4999-8999-999999999999";
 const snapshots = [
   { playerId: humanId, userId: humanId, kind: "HUMAN" as const, seat: 0 as const, displayName: "Ada" },
-  { playerId: botId, userId: null, kind: "BOT" as const, seat: 1 as const, displayName: "Nia" },
+  { playerId: botId, userId: null, kind: "BOT" as const, seat: 1 as const, displayName: "Naia" },
 ];
 
 function botDrawState(): GameState {
@@ -72,13 +72,13 @@ describe("single-player bot action service", () => {
     }));
   });
 
-  it("returns a safe human projection after Nia draws from stock", async () => {
+  it("returns a safe human projection after Naia draws from stock", async () => {
     const result = await applyPendingBotAction(gameId, humanId, persisted.version);
     const payload = JSON.stringify(result.game);
 
     for (const card of persisted.players[1]!.hand) expect(payload).not.toContain(card.id);
     for (const card of persisted.stock) expect(payload).not.toContain(card.id);
-    expect(result.game.opponent).toMatchObject({ displayName: "Nia", kind: "BOT", cardCount: 11 });
+    expect(result.game.opponent).toMatchObject({ displayName: "Naia", kind: "BOT", cardCount: 11 });
   });
 
   it("treats stale or premature wakeups as safe no-ops", async () => {

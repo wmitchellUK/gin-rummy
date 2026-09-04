@@ -84,7 +84,7 @@ name snapshot, so profile edits never rewrite game history.
 | source_game_id uuid null references games(id) | accepted-rematch origin; unique when present |
 | rematch_requested_by uuid null references auth.users(id) | completed-game request state |
 | game_mode text not null | MULTIPLAYER or SINGLE_PLAYER |
-| bot_profile text null | CASUAL_V1 only for Nia games |
+| bot_profile text null | CASUAL_V1 only for Naia games |
 | lifecycle timestamps | created_at, started_at, completed_at, last_activity_at |
 
 game_status is a PostgreSQL enum. Its values are a query/history index updated in the
@@ -108,7 +108,7 @@ last_seen_at is never used to decide turns, outcomes, or forfeits. Existing huma
 participants are backfilled with `participant_id = user_id`; `HUMAN` rows retain a
 required Auth user, while `BOT` rows require `user_id is null`. Action actors, private
 event recipients, and results reference the game participant rather than `auth.users`,
-so Nia never needs a fake account. Browser membership and RLS continue to use the
+so Naia never needs a fake account. Browser membership and RLS continue to use the
 human row's `user_id`.
 
 ### game_state
@@ -318,11 +318,11 @@ projection. They are not a second rules engine.
 | POST /api/session/anonymous | establish anonymous session if none exists |
 | POST /api/profile | validate/save display name |
 | POST /api/games | create waiting game and creator seat |
-| POST /api/games with `SINGLE_PLAYER` | atomically create, seat, deal, and start a match against Nia |
+| POST /api/games with `SINGLE_PLAYER` | atomically create, seat, deal, and start a match against Naia |
 | POST /api/games/join | resolve invite, atomically claim seat/start game |
 | GET /api/games/[gameId] | membership check and fresh player projection |
 | POST /api/games/[gameId]/actions | authoritative action application |
-| POST /api/games/[gameId]/bot-action | version-check and commit exactly one pending Nia action |
+| POST /api/games/[gameId]/bot-action | version-check and commit exactly one pending Naia action |
 | GET /api/history | member-safe summaries, newest first |
 | POST /api/games/[gameId]/rematch | request/accept/decline; acceptance creates new game |
 
@@ -403,7 +403,7 @@ contains canonical JSON or raw persisted event payloads.
 ## Single-player orchestration
 
 `src/bot` has no framework, database, clock, or ambient-randomness dependency. Its
-`BotObservation` contains Nia's hand, rules, stock count, current public discard, and a
+`BotObservation` contains Naia's hand, rules, stock count, current public discard, and a
 short window of public actions. It never contains the human hand or stock order. The
 casual strategy ranks deadwood and meld potential, applies limited defensive memory,
 and samples among nearby candidates using an injected random source.
@@ -569,7 +569,7 @@ The Vitest engine suite in GAME_ENGINE.md is the base. Add:
   events, receipt, metadata, and result are all committed or all absent; retries are
   idempotent; and conflicting action IDs fail.
 - SQL RLS tests using user A, user B, and non-member C. Verify safe metadata access,
-  denial of canonical/event/action reads and writes, denial of commit RPC execution,
+  deNaial of canonical/event/action reads and writes, deNaial of commit RPC execution,
   and private Realtime subscription authorization.
 - Targeted Playwright flows for anonymous create/join, full-game rejection, stale double
   submission, refresh in each product state, retry/reconnect, and network-response

@@ -22,17 +22,17 @@ function started(): GameState {
 }
 
 describe("browser game projection", () => {
-  it("identifies a pending computer turn without exposing Nia's cards", () => {
+  it("identifies a pending computer turn without exposing Naia's cards", () => {
     const state = started();
     const view = projectGameState(state, p1, [
       { playerId: p1, userId: p1, kind: "HUMAN", seat: 0, displayName: "Ada" },
-      { playerId: p2, userId: null, kind: "BOT", seat: 1, displayName: "Nia" },
+      { playerId: p2, userId: null, kind: "BOT", seat: 1, displayName: "Naia" },
     ], "SINGLE_PLAYER");
 
     expect(view).toMatchObject({
       mode: "SINGLE_PLAYER",
       botActionPending: true,
-      opponent: { displayName: "Nia", kind: "BOT", cardCount: 10 },
+      opponent: { displayName: "Naia", kind: "BOT", cardCount: 10 },
     });
     const payload = JSON.stringify(view);
     for (const card of state.players[1]!.hand) expect(payload).not.toContain(card.id);

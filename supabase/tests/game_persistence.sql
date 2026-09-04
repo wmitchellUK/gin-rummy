@@ -67,8 +67,8 @@ select lives_ok($$select public.create_bot_game(
 )$$, 'single-player creation is atomic without a bot Auth user');
 select is((select game_mode from public.games where id = '90000000-0000-4000-8000-000000000001'), 'SINGLE_PLAYER', 'single-player mode is recorded');
 select is((select count(*) from public.game_players where game_id = '90000000-0000-4000-8000-000000000001'), 2::bigint, 'single-player game has two participants');
-select is((select count(*) from public.game_players where game_id = '90000000-0000-4000-8000-000000000001' and player_kind = 'BOT' and user_id is null and display_name = 'Nia'), 1::bigint, 'Nia is a non-auth bot participant');
-select is((select count(*) from auth.users where id = '90000000-0000-4000-8000-000000000002'), 0::bigint, 'creating Nia does not create an Auth account');
+select is((select count(*) from public.game_players where game_id = '90000000-0000-4000-8000-000000000001' and player_kind = 'BOT' and user_id is null and display_name = 'Naia'), 1::bigint, 'Naia is a non-auth bot participant');
+select is((select count(*) from auth.users where id = '90000000-0000-4000-8000-000000000002'), 0::bigint, 'creating Naia does not create an Auth account');
 select is((select count(*) from public.game_actions where game_id = '90000000-0000-4000-8000-000000000001' and actor_id = '50000000-0000-4000-8000-000000000001'), 1::bigint, 'the trusted start receipt belongs to the human participant');
 
 select * from finish();

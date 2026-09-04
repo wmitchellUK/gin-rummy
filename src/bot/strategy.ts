@@ -46,7 +46,7 @@ function rankedDiscards(hand: readonly Card[], forbiddenId: string | null | unde
 
 function choosePlausible(options: readonly DiscardChoice[], random: BotRandomSource): DiscardChoice {
   const best = options[0];
-  if (!best) throw new Error("Nia has no legal discard.");
+  if (!best) throw new Error("Naia has no legal discard.");
   const eligible = options.filter((option) => best.quality - option.quality <= 6).slice(0, 3);
   const roll = random.nextFloat();
   const index = roll < 0.78 ? 0 : roll < 0.95 ? 1 : 2;

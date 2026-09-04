@@ -105,7 +105,7 @@ begin
   );
   insert into public.game_players(game_id, participant_id, user_id, player_kind, seat, display_name) values
     (p_game_id, p_creator_id, p_creator_id, 'HUMAN', 0, p_display_name),
-    (p_game_id, p_bot_player_id, null, 'BOT', 1, 'Nia');
+    (p_game_id, p_bot_player_id, null, 'BOT', 1, 'Naia');
   insert into public.game_state(game_id, version, canonical_state) values (p_game_id, 1, p_next_state);
   insert into public.game_actions(action_id, game_id, actor_id, expected_version, action_type, accepted_version)
     values (v_action_id, p_game_id, p_creator_id, 0, 'START_GAME', 1);

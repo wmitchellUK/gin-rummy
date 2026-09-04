@@ -43,25 +43,25 @@ test("anonymous browser sessions reach route handlers through auth cookies", asy
   await unauthenticated.close();
 });
 
-test("a guest starts an immediate recoverable game against Nia", async ({ browser }) => {
+test("a guest starts an immediate recoverable game against Naia", async ({ browser }) => {
   test.skip(!gameConfigured, "Requires Supabase browser credentials and SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY).");
 
   const page = await browser.newPage();
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Play Nia" })).toBeEnabled();
-  await page.getByRole("button", { name: "Play Nia" }).click();
+  await expect(page.getByRole("button", { name: "Play Naia" })).toBeEnabled();
+  await page.getByRole("button", { name: "Play Naia" }).click();
   await page.getByLabel("Your name").fill("Solo Player");
   await page.getByRole("button", { name: "Continue" }).click();
 
   await expect(page).toHaveURL(/\/game\//);
-  await expect(page.getByRole("heading", { name: "Nia" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Naia" })).toBeVisible();
   await expect(page.getByText("Computer opponent", { exact: true })).toBeVisible();
   await expect(page.locator(".invite-field")).toHaveCount(0);
   await expect(page.locator(".bot-avatar img")).toBeVisible();
   await expect(page.locator(".game-actions button:enabled").first()).toBeVisible({ timeout: 10_000 });
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Nia" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Naia" })).toBeVisible();
   await expect(page.getByText("Computer opponent", { exact: true })).toBeVisible();
   await expect(page.locator(".game-actions button:enabled").first()).toBeVisible({ timeout: 10_000 });
 });

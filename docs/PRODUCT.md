@@ -2,7 +2,7 @@
 
 ## Product goals
 
-Gin Rummy is a polished two-player web game that makes it easy to start a complete match with a friend or the casual computer opponent Nia without accounts, setup friction, or loss of progress. The table should feel like a premium physical card game: the player's hand is prominent, actions are clear, and scores and outcomes are easy to understand.
+Gin Rummy is a polished two-player web game that makes it easy to start a complete match with a friend or the casual computer opponent Naia without accounts, setup friction, or loss of progress. The table should feel like a premium physical card game: the player's hand is prominent, actions are clear, and scores and outcomes are easy to understand.
 
 The server is authoritative for every game action and score. A player may play as a guest, choose a display name, and optionally use an account to retain their game history across devices.
 
@@ -14,19 +14,19 @@ V1 does not include selectable or adaptive bot difficulty, public matchmaking, t
 
 ## User journey
 
-1. A visitor opens the landing page, enters a display name, and chooses Play Nia, creates a private game, or enters an invite code.
-2. Play Nia creates and deals a single-player match immediately. Nia takes server-authoritative turns with brief readable pacing.
+1. A visitor opens the landing page, enters a display name, and chooses Play Naia, creates a private game, or enters an invite code.
+2. Play Naia creates and deals a single-player match immediately. Naia takes server-authoritative turns with brief readable pacing.
 3. A private-game creator receives a shareable game URL and a short invite code, then waits for one opponent.
 4. The opponent opens the URL or submits the code, chooses a display name if needed, and joins. The game begins when both seats are filled.
 5. Players take turns through hands, see the scored result of each hand, and start the next hand.
-6. When a player reaches the match target, both see the game result. Human opponents negotiate a rematch; a Nia match offers an immediate Play Nia again action.
+6. When a player reaches the match target, both see the game result. Human opponents negotiate a rematch; a Naia match offers an immediate Play Naia again action.
 7. Recent completed and in-progress games are available on the current device; authenticated players see their history when they sign in on another device.
 
 ## Routes and screens
 
 | Route | Screen | Required behavior |
 | --- | --- | --- |
-| `/` | Landing | Enter or change display name; play Nia; create a private game; join with invite code; link to recent games. |
+| `/` | Landing | Enter or change display name; play Naia; create a private game; join with invite code; link to recent games. |
 | `/game/[gameId]` | Game table | Resolve the invite, show waiting, play, reconnect, hand-result, game-result, and rematch states as appropriate. The full URL is the shareable invite URL. |
 | `/history` | History | Show the current identity's recent in-progress and completed games, newest first; open a selected game. |
 | `/card-studio` | Public Card Studio prototype | Create, rename, edit, archive, and globally activate face-card sets; restore the built-in design. No sign-in is required during the prototype. |
@@ -40,7 +40,7 @@ The invite code is short, human-enterable, unique among joinable games, and maps
 | Landing | Name, create-game, and join-by-code controls are available without account creation. |
 | Waiting for opponent | Creator sees the invite URL/code, copy controls, and a waiting status. They may refresh safely. |
 | Playing | Show the player’s hand, their legal turn actions, public piles, turn/status, hand and match scores, and opponent card count only. |
-| Nia playing | Show Nia as a computer opponent and advance one server-controlled action after a brief thinking beat. Refresh safely resumes any pending Nia action. |
+| Naia playing | Show Naia as a computer opponent and advance one server-controlled action after a brief thinking beat. Refresh safely resumes any pending Naia action. |
 | Disconnected opponent | Keep the game state intact, show a clear reconnecting/offline status, and disable actions that require the absent player. Resume when the opponent reconnects. |
 | Hand result | Freeze play and show declaration, melds, deadwood, layoff result where applicable, points awarded, and updated match score. Each player selects Start next hand; the server deals only when both have acknowledged the result. |
 | Game result | Show winner, final score, completed-hand summary, and rematch controls. No further game actions are accepted. |
@@ -87,8 +87,8 @@ V1 uses standard two-player Gin Rummy with the following explicit choices. Rule 
 - Require a non-empty display name, normalize whitespace, enforce a reasonable length limit, and permit duplicate names without treating them as identity.
 - Keep each game private: access is through the game URL or invite code, and no browsing or public listing exposes active games.
 - Persist the canonical game, player identities, hand state, actions, scores, and completion state server-side. Clients submit intents such as draw, discard, knock, gin, next-hand acknowledgement, and rematch response; they never submit resulting game state or scores.
-- Nia is a non-Auth game participant. Her strategy receives only her own cards and public observations, never the human hand or future stock order, and all chosen intents use the same engine validation and versioned persistence as human actions.
-- Nia uses a single casual profile with bounded random variation among plausible moves; she is neither perfect nor deliberately nonsensical.
+- Naia is a non-Auth game participant. Her strategy receives only her own cards and public observations, never the human hand or future stock order, and all chosen intents use the same engine validation and versioned persistence as human actions.
+- Naia uses a single casual profile with bounded random variation among plausible moves; she is neither perfect nor deliberately nonsensical.
 - Validate every action against the current server state and turn. Prevent duplicate, stale, out-of-turn, illegal, and replayed actions.
 - Never send an opponent’s card identities, undealt stock order, or any other hidden information to a client. The player may see their own cards, public discard pile, public scores, card counts, and revealed cards only when rules require reveal.
 - Support multiple hands until match completion. Record enough hand detail to render results and recent-game summaries accurately.

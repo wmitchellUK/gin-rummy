@@ -17,7 +17,7 @@ const base = (cards: readonly Card[], extra: Partial<BotObservation> = {}): BotO
   ...extra,
 });
 
-describe("Nia casual strategy", () => {
+describe("Naia casual strategy", () => {
   it("always declares gin when its chosen discard leaves no deadwood", () => {
     const cards = hand("A♥ 2♥ 3♥ 4♥ 5♥ 6♥ 7♥ 8♥ 9♥ 10♥ K♣");
     expect(chooseBotIntent(base(cards), random(0))).toEqual({ type: "GIN", cardId: "K:CLUBS" });
