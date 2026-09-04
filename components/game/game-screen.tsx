@@ -100,10 +100,10 @@ function GameScreenContent({ gameId }: { gameId: string }) {
     }
     const wakeKey = `${game.gameId}:${game.version}`;
     if (botWakeVersion.current === wakeKey) return;
-    botWakeVersion.current = wakeKey;
     const range = game.phase === "AWAITING_DISCARD" ? [900, 1600] : game.phase === "HAND_COMPLETE" ? [600, 1000] : [700, 1200];
     const delay = range[0]! + Math.floor(Math.random() * (range[1]! - range[0]!));
     const timer = window.setTimeout(() => {
+      botWakeVersion.current = wakeKey;
       void jsonRequest(`/api/games/${gameId}/bot-action`, {
         method: "POST",
         body: JSON.stringify({ expectedVersion: game.version }),
