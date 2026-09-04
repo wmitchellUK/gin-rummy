@@ -77,12 +77,14 @@ name snapshot, so profile edits never rewrite game history.
 | Column | Purpose |
 | --- | --- |
 | id uuid primary key | URL game identifier |
-| invite_code citext not null unique | short, human-entered private invite code |
+| invite_code citext null unique | short private invite code; null for single-player |
 | status game_status not null | WAITING, PLAYING, HAND_COMPLETE, or COMPLETE |
 | rules jsonb not null | immutable, validated GameRules snapshot |
 | created_by uuid not null references auth.users(id) | creator |
 | source_game_id uuid null references games(id) | accepted-rematch origin; unique when present |
 | rematch_requested_by uuid null references auth.users(id) | completed-game request state |
+| game_mode text not null | MULTIPLAYER or SINGLE_PLAYER |
+| bot_profile text null | CASUAL_V1 only for Nia games |
 | lifecycle timestamps | created_at, started_at, completed_at, last_activity_at |
 
 game_status is a PostgreSQL enum. Its values are a query/history index updated in the
@@ -93,14 +95,21 @@ same transaction as canonical state; engine phase and scores remain authoritativ
 | Column | Purpose |
 | --- | --- |
 | game_id uuid not null references games(id) on delete cascade | game |
-| user_id uuid not null references auth.users(id) | authenticated seat owner |
+| participant_id uuid not null | stable engine player identity |
+| user_id uuid null references auth.users(id) | authenticated seat owner for humans; null for bots |
+| player_kind text not null | HUMAN or BOT |
 | seat smallint not null check (seat in (0, 1)) | stable two-player seat |
 | display_name text not null | name at join time |
 | joined_at, last_seen_at timestamptz not null | history and advisory presence |
 
-Primary key: (game_id, user_id). A unique (game_id, seat) makes a third player
-impossible; the primary key prevents a user taking both seats. last_seen_at is never
-used to decide turns, outcomes, or forfeits.
+Primary key: (game_id, participant_id). A unique (game_id, seat) makes a third player
+impossible, and a partial unique (game_id, user_id) prevents a human taking both seats.
+last_seen_at is never used to decide turns, outcomes, or forfeits. Existing human
+participants are backfilled with `participant_id = user_id`; `HUMAN` rows retain a
+required Auth user, while `BOT` rows require `user_id is null`. Action actors, private
+event recipients, and results reference the game participant rather than `auth.users`,
+so Nia never needs a fake account. Browser membership and RLS continue to use the
+human row's `user_id`.
 
 ### game_state
 
@@ -309,9 +318,11 @@ projection. They are not a second rules engine.
 | POST /api/session/anonymous | establish anonymous session if none exists |
 | POST /api/profile | validate/save display name |
 | POST /api/games | create waiting game and creator seat |
+| POST /api/games with `SINGLE_PLAYER` | atomically create, seat, deal, and start a match against Nia |
 | POST /api/games/join | resolve invite, atomically claim seat/start game |
 | GET /api/games/[gameId] | membership check and fresh player projection |
 | POST /api/games/[gameId]/actions | authoritative action application |
+| POST /api/games/[gameId]/bot-action | version-check and commit exactly one pending Nia action |
 | GET /api/history | member-safe summaries, newest first |
 | POST /api/games/[gameId]/rematch | request/accept/decline; acceptance creates new game |
 
@@ -388,6 +399,21 @@ POST /api/games/[gameId]/actions follows this sequence:
 A stale RPC result returns HTTP 409 with a safe error code and current projection.
 Engine/input errors return stable 4xx codes without hidden card information. No response
 contains canonical JSON or raw persisted event payloads.
+
+## Single-player orchestration
+
+`src/bot` has no framework, database, clock, or ambient-randomness dependency. Its
+`BotObservation` contains Nia's hand, rules, stock count, current public discard, and a
+short window of public actions. It never contains the human hand or stock order. The
+casual strategy ranks deadwood and meld potential, applies limited defensive memory,
+and samples among nearby candidates using an injected random source.
+
+The browser is only a wakeup clock. A projected `botActionPending` schedules a POST
+after a brief delay; the endpoint reloads canonical state, verifies mode, participant,
+phase, and expected version, chooses one intent, applies the engine, and commits through
+the existing optimistic-concurrency RPC. The returned safe projection may schedule the
+next phase. Multiple tabs, refreshes, and retries are safe because only one same-version
+candidate can commit. If no browser is open, a single-player game pauses until resumed.
 
 ## Player-safe state projection
 

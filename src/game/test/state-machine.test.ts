@@ -42,6 +42,10 @@ describe("explicit state machine", () => {
     expect(result.nextState).toMatchObject({ phase: "AWAITING_DISCARD", currentPlayerId: P2, forbiddenDiscardId: upcard.id });
     expect(result.nextState.players.find((player) => player.id === P2)!.hand).toHaveLength(11);
     expectError(applyAction(result.nextState, { type: "DISCARD", actorId: P2, actionId: aid(), expectedVersion: result.nextState.version, cardId: upcard.id }), "ILLEGAL_REDISCARD");
+    if (result.nextState.phase !== "AWAITING_DISCARD") throw new Error("Unexpected phase");
+    const otherCard = result.nextState.players.find((player) => player.id === P2)!.hand.find((card) => card.id !== upcard.id)!;
+    const discarded = expectOk(applyAction(result.nextState, { type: "DISCARD", actorId: P2, actionId: aid(), expectedVersion: result.nextState.version, cardId: otherCard.id })).nextState;
+    expect(discarded).toMatchObject({ phase: "AWAITING_DRAW", currentPlayerId: P1, discardPile: [otherCard] });
   });
 
   it("lets the dealer take after the non-dealer passes", () => {
@@ -51,6 +55,10 @@ describe("explicit state machine", () => {
     const taken = expectOk(applyAction(passed, { type: "TAKE_INITIAL_UPCARD", actorId: P1, actionId: aid(), expectedVersion: passed.version })).nextState;
     expect(taken).toMatchObject({ phase: "AWAITING_DISCARD", currentPlayerId: P1 });
     expect(taken.players[0].hand).toHaveLength(11);
+    if (taken.phase !== "AWAITING_DISCARD") throw new Error("Unexpected phase");
+    const otherCard = taken.players[0].hand.find((card) => card.id !== taken.forbiddenDiscardId)!;
+    const discarded = expectOk(applyAction(taken, { type: "DISCARD", actorId: P1, actionId: aid(), expectedVersion: taken.version, cardId: otherCard.id })).nextState;
+    expect(discarded).toMatchObject({ phase: "AWAITING_DRAW", currentPlayerId: P2, discardPile: [otherCard] });
   });
 
   it("requires a stock draw after both opening passes", () => {

@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlayerGameView, PublicCard, RevealedPlayerHandView } from "@/src/shared/game-view";
-import { GameResult, HandCompleteResult } from "./game-screen";
+import { actionMessage, GameResult, HandCompleteResult, newestGameView } from "./game-screen";
 
 const card = (id: string, rank: string, suit: string): PublicCard => ({ id, rank, suit });
 const runCards = [card("A:HEARTS", "A", "HEARTS"), card("2:HEARTS", "2", "HEARTS"), card("3:HEARTS", "3", "HEARTS")];
@@ -23,15 +23,17 @@ function baseGame(): PlayerGameView {
   return {
     gameId: "game-1",
     version: 10,
+    mode: "MULTIPLAYER",
     status: "HAND_COMPLETE",
     phase: "HAND_COMPLETE",
     rules: { knockThreshold: 10, ginBonus: 25, undercutBonus: 25, matchTarget: 100 },
     you: { seat: 0, displayName: "Will", score: 31, hand: [] },
-    opponent: { seat: 1, displayName: "Kim", score: 18, cardCount: 10 },
+    opponent: { seat: 1, displayName: "Kim", kind: "HUMAN", score: 18, cardCount: 10 },
     dealerId: "p2",
     stockCount: 20,
     discardPile: [],
     legalControls: ["START_NEXT_HAND"],
+    botActionPending: false,
   };
 }
 
@@ -89,5 +91,45 @@ describe("game result surfaces", () => {
     expect(screen.getByText("Will +34")).toBeInTheDocument();
     expect(screen.getByText("Stock exhausted")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Request rematch" })).toBeEnabled();
+  });
+
+  it("offers an immediate replay against Nia instead of multiplayer negotiation", () => {
+    const onRematch = vi.fn();
+    const game: PlayerGameView = {
+      ...baseGame(),
+      mode: "SINGLE_PLAYER",
+      status: "COMPLETE",
+      phase: "GAME_COMPLETE",
+      opponent: { seat: 1, displayName: "Nia", kind: "BOT", score: 18, cardCount: 10 },
+      legalControls: [],
+      gameResult: {
+        winnerId: "p1",
+        winnerName: "Will",
+        finalScores: [{ playerId: "p1", displayName: "Will", score: 100 }, { playerId: "p2", displayName: "Nia", score: 18 }],
+        matchTarget: 100,
+        completedHands: [],
+      },
+    };
+    render(<GameResult game={game} busy={false} onRematch={onRematch} />);
+    screen.getByRole("button", { name: "Play Nia again" }).click();
+    expect(onRematch).toHaveBeenCalledWith("PLAY_AGAIN");
+    expect(screen.queryByRole("button", { name: "Request rematch" })).not.toBeInTheDocument();
+  });
+});
+
+describe("game action feedback", () => {
+  it("never replaces a newer game view with an older action or polling response", () => {
+    const current = { ...baseGame(), status: "PLAYING" as const, phase: "AWAITING_DISCARD", version: 7 };
+    const stale = { ...current, phase: "OPENING_DEALER", version: 6 };
+    const next = { ...current, phase: "AWAITING_DRAW", version: 8 };
+    expect(newestGameView(current, stale)).toBe(current);
+    expect(newestGameView(current, next)).toBe(next);
+    expect(newestGameView(current, { ...stale, gameId: "game-2" })).toMatchObject({ gameId: "game-2" });
+  });
+
+  it("explains an illegal initial-up-card rediscard without masking it as a generic failure", () => {
+    expect(actionMessage(new Error("ILLEGAL_REDISCARD"))).toBe("You can’t discard the face-up card you just picked up. Choose another card.");
+    expect(actionMessage(new Error("CARD_NOT_IN_HAND"))).toBe("That card is no longer in your hand. The latest game has been loaded.");
+    expect(actionMessage(new Error("ACTION_NOT_ALLOWED_IN_PHASE"))).toBe("That move is no longer available. The latest game has been loaded.");
   });
 });

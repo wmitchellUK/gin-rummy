@@ -98,6 +98,7 @@ export type HandResultView = ScoredHandResultView | CancelledHandResultView;
 export interface PlayerGameView {
   readonly gameId: string;
   readonly version: number;
+  readonly mode: "MULTIPLAYER" | "SINGLE_PLAYER";
   readonly status: "WAITING" | "PLAYING" | "HAND_COMPLETE" | "COMPLETE";
   readonly phase: string;
   readonly rules: { readonly knockThreshold: number; readonly ginBonus: number; readonly undercutBonus: number; readonly matchTarget: number };
@@ -109,13 +110,21 @@ export interface PlayerGameView {
     /** Rule-valid groups derived only from the caller's own cards. */
     readonly meldCandidates?: readonly PublicMeld[];
   };
-  readonly opponent?: { readonly seat: 0 | 1; readonly displayName: string; readonly score: number; readonly cardCount: number };
+  readonly opponent?: {
+    readonly seat: 0 | 1;
+    readonly displayName: string;
+    readonly kind: "HUMAN" | "BOT";
+    readonly score: number;
+    readonly cardCount: number;
+  };
   readonly dealerId: string | null;
   readonly currentPlayerId?: string;
   readonly stockCount: number;
   readonly discardPile: readonly PublicCard[];
   readonly initialUpcard?: PublicCard;
   readonly legalControls: readonly LegalControl[];
+  /** True when the browser may safely wake the server-controlled opponent for one action. */
+  readonly botActionPending: boolean;
   /** Player-safe, card-specific restrictions for the viewer's active turn. */
   readonly turnRestrictions?: TurnRestrictions;
   /** The stock card received on the viewer's current discard decision. */

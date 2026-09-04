@@ -1,23 +1,38 @@
 import type { GameEvent, GameResult, GameState } from "@/src/game";
 import { createAdminClient } from "./supabase-admin";
 import { HttpError } from "./auth";
-import type { PlayerSnapshot } from "./game-projection";
+import type { GameMode, PlayerSnapshot } from "./game-projection";
 
-export type LoadedGame = { readonly state: GameState; readonly snapshots: readonly PlayerSnapshot[]; readonly status: string; readonly rematchRequestedBy: string | null };
+export type LoadedGame = {
+  readonly state: GameState;
+  readonly snapshots: readonly PlayerSnapshot[];
+  readonly status: string;
+  readonly mode: GameMode;
+  readonly botProfile: "CASUAL_V1" | null;
+  readonly rematchRequestedBy: string | null;
+};
 
 export async function loadCanonicalGame(gameId: string): Promise<LoadedGame> {
   const admin = createAdminClient();
   const [{ data: checkpoint, error: checkpointError }, { data: players, error: playersError }, { data: game, error: gameError }] = await Promise.all([
     admin.from("game_state").select("canonical_state").eq("game_id", gameId).maybeSingle(),
-    admin.from("game_players").select("user_id, seat, display_name").eq("game_id", gameId).order("seat"),
-    admin.from("games").select("status, rematch_requested_by").eq("id", gameId).maybeSingle(),
+    admin.from("game_players").select("participant_id, user_id, player_kind, seat, display_name").eq("game_id", gameId).order("seat"),
+    admin.from("games").select("status, game_mode, bot_profile, rematch_requested_by").eq("id", gameId).maybeSingle(),
   ]);
   if (checkpointError || playersError || gameError) throw new Error("Could not load game.");
   if (!checkpoint || !game || !players) throw new HttpError(404, "GAME_NOT_FOUND");
   return {
     state: checkpoint.canonical_state as GameState,
-    snapshots: players.map((row) => ({ userId: row.user_id, seat: row.seat as 0 | 1, displayName: row.display_name })),
+    snapshots: players.map((row) => ({
+      playerId: row.participant_id as string,
+      userId: row.user_id as string | null,
+      kind: row.player_kind as "HUMAN" | "BOT",
+      seat: row.seat as 0 | 1,
+      displayName: row.display_name,
+    })),
     status: game.status,
+    mode: game.game_mode as GameMode,
+    botProfile: game.bot_profile as "CASUAL_V1" | null,
     rematchRequestedBy: game.rematch_requested_by as string | null,
   };
 }
@@ -81,6 +96,43 @@ export async function createGame(inviteCode: string, inviteTokenDigest: string, 
     throw new Error("Could not create game.");
   }
   return data as string;
+}
+
+export async function createBotGame(input: {
+  gameId: string;
+  botPlayerId: string;
+  creatorId: string;
+  displayName: string;
+  nextState: GameState;
+  events: readonly GameEvent[];
+  sourceGameId?: string;
+}): Promise<string> {
+  const { data, error } = await createAdminClient().rpc("create_bot_game", {
+    p_game_id: input.gameId,
+    p_bot_player_id: input.botPlayerId,
+    p_creator_id: input.creatorId,
+    p_display_name: input.displayName,
+    p_rules: input.nextState.rules,
+    p_next_state: input.nextState,
+    p_events: input.events,
+    p_source_game_id: input.sourceGameId ?? null,
+  }).single();
+  if (error) {
+    if (error.message.includes("REMATCH_UNAVAILABLE")) throw new HttpError(400, "REMATCH_UNAVAILABLE");
+    throw new Error("Could not create single-player game.");
+  }
+  return (data as { game_id: string }).game_id;
+}
+
+export async function loadRecentPublicEvents(gameId: string): Promise<readonly Record<string, unknown>[]> {
+  const { data, error } = await createAdminClient().from("game_events")
+    .select("payload")
+    .eq("game_id", gameId)
+    .eq("visibility", "PUBLIC")
+    .order("id", { ascending: false })
+    .limit(32);
+  if (error) throw new Error("Could not load public game history.");
+  return (data ?? []).map((row) => row.payload as Record<string, unknown>);
 }
 
 export async function findInvite(tokenDigest: string): Promise<{ id: string; status: string } | null> {

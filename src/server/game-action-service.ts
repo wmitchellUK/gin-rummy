@@ -35,14 +35,14 @@ export async function applyPlayerAction(gameId: string, actorId: string, input: 
     || receipt.expected_version !== input.expectedVersion || receipt.action_type !== input.action.type
     || (receipt.card_id !== null && receipt.card_id !== (input.action.cardId ?? null)))) throw new HttpError(409, "ACTION_ID_CONFLICT");
   const loaded = await loadCanonicalGame(gameId);
-  if (!loaded.snapshots.some((item) => item.userId === actorId)) throw new HttpError(404, "GAME_NOT_FOUND");
-  if (receipt) return { view: projectGameState(loaded.state, actorId, loaded.snapshots), stale: false };
+  if (!loaded.snapshots.some((item) => item.playerId === actorId && item.kind === "HUMAN")) throw new HttpError(404, "GAME_NOT_FOUND");
+  if (receipt) return { view: projectGameState(loaded.state, actorId, loaded.snapshots, loaded.mode, loaded.rematchRequestedBy), stale: false };
   const invariant = validateGameState(loaded.state);
   if (!invariant.ok) throw new Error("Stored game state failed engine validation.");
   const result = applyAction(loaded.state, trustedAction(loaded.state, actorId, input));
   if (!result.ok) {
     const stale = result.error.code === "STALE_VERSION";
-    return { view: projectGameState(loaded.state, actorId, loaded.snapshots), stale, errorCode: result.error.code };
+    return { view: projectGameState(loaded.state, actorId, loaded.snapshots, loaded.mode, loaded.rematchRequestedBy), stale, errorCode: result.error.code };
   }
   const committed = await commitGameAction({
     actionId: input.action.actionId, gameId, actorId, expectedVersion: input.expectedVersion,
@@ -51,7 +51,7 @@ export async function applyPlayerAction(gameId: string, actorId: string, input: 
     ...(result.nextState.phase === "GAME_COMPLETE" ? { result: result.nextState.gameResult } : {}),
   });
   const fresh = await loadCanonicalGame(gameId);
-  const view = projectGameState(fresh.state, actorId, fresh.snapshots, fresh.rematchRequestedBy);
+  const view = projectGameState(fresh.state, actorId, fresh.snapshots, fresh.mode, fresh.rematchRequestedBy);
   if (committed.outcome === "COMMITTED") void notifyGameChanged(gameId, committed.version);
   return { view, stale: committed.outcome === "STALE" };
 }

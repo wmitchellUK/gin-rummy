@@ -45,6 +45,8 @@ select is((
     'public.join_game_and_start_with_invite_token(text,uuid,text,jsonb,jsonb)',
     'public.request_rematch(uuid,uuid)',
     'public.accept_rematch(uuid,uuid,uuid,citext,jsonb,jsonb)',
+    'public.create_bot_game(uuid,uuid,uuid,text,jsonb,jsonb,jsonb,uuid)',
+    'public.fill_human_participant_id()',
     'public.set_updated_at()',
     'public.handle_new_user()',
     'public.reject_game_rule_changes()'
@@ -60,7 +62,9 @@ select is((
     'public.join_game_and_start(citext,uuid,text,jsonb,jsonb)',
     'public.join_game_and_start_with_invite_token(text,uuid,text,jsonb,jsonb)',
     'public.request_rematch(uuid,uuid)',
-    'public.accept_rematch(uuid,uuid,uuid,citext,jsonb,jsonb)'
+    'public.accept_rematch(uuid,uuid,uuid,citext,jsonb,jsonb)',
+    'public.create_bot_game(uuid,uuid,uuid,text,jsonb,jsonb,jsonb,uuid)',
+    'public.fill_human_participant_id()'
   ]) signature
   where has_function_privilege('anon', signature, 'EXECUTE')
 ), 0::bigint, 'anonymous clients cannot execute any server RPC');

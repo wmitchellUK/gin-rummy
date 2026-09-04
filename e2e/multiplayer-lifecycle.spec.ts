@@ -43,6 +43,29 @@ test("anonymous browser sessions reach route handlers through auth cookies", asy
   await unauthenticated.close();
 });
 
+test("a guest starts an immediate recoverable game against Nia", async ({ browser }) => {
+  test.skip(!gameConfigured, "Requires Supabase browser credentials and SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY).");
+
+  const page = await browser.newPage();
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Play Nia" })).toBeEnabled();
+  await page.getByRole("button", { name: "Play Nia" }).click();
+  await page.getByLabel("Your name").fill("Solo Player");
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  await expect(page).toHaveURL(/\/game\//);
+  await expect(page.getByRole("heading", { name: "Nia" })).toBeVisible();
+  await expect(page.getByText("Computer opponent", { exact: true })).toBeVisible();
+  await expect(page.locator(".invite-field")).toHaveCount(0);
+  await expect(page.locator(".bot-avatar img")).toBeVisible();
+  await expect(page.locator(".game-actions button:enabled").first()).toBeVisible({ timeout: 10_000 });
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Nia" })).toBeVisible();
+  await expect(page.getByText("Computer opponent", { exact: true })).toBeVisible();
+  await expect(page.locator(".game-actions button:enabled").first()).toBeVisible({ timeout: 10_000 });
+});
+
 test("two anonymous browsers create, join, synchronize an action, and recover after refresh", async ({ browser }) => {
   test.skip(!gameConfigured, "Requires Supabase browser credentials and SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY).");
 
@@ -114,4 +137,36 @@ test("two anonymous browsers create, join, synchronize an action, and recover af
   await other.reload();
   await expect(other.getByRole("heading", { name: other === a ? "Player A" : "Player B" })).toBeVisible();
   await expect(other.getByRole("button", { name: /Draw stock/ })).toBeEnabled();
+});
+
+test("a player can discard a different card after accepting the initial up-card", async ({ browser }) => {
+  test.skip(!gameConfigured, "Requires Supabase browser credentials and SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY).");
+
+  const first = await browser.newPage();
+  const second = await browser.newPage();
+  await first.goto("/");
+  await first.getByRole("button", { name: "Create a private game" }).click();
+  await first.getByLabel("Your name").fill("Opening A");
+  await first.getByRole("button", { name: "Continue" }).click();
+  const invite = await first.locator(".invite-field code").textContent();
+  expect(invite).toMatch(/\/join\/[A-Za-z0-9_-]{43}$/);
+
+  await second.goto(invite!);
+  await second.getByLabel("Your name").fill("Opening B");
+  await second.getByRole("button", { name: "Continue" }).click();
+  await second.getByRole("button", { name: "Join game" }).click();
+
+  const openingPlayer = await firstEnabled([first, second], /^Pass$/);
+  await openingPlayer.button.click();
+  const acceptingPlayer = await firstEnabled([first, second], /^Take discard$/);
+  await acceptingPlayer.button.click();
+  await expect(acceptingPlayer.page.locator(".action-guidance")).toHaveText("Select a card to discard");
+
+  const legalDiscard = acceptingPlayer.page.locator(".card-hand [data-hand-card]:not(.turn-card-indicated)").first();
+  await legalDiscard.click({ position: { x: 10, y: 10 } });
+  await acceptingPlayer.page.locator(".game-actions").getByRole("button", { name: /^Discard / }).click();
+
+  const opponent = acceptingPlayer.page === first ? second : first;
+  await expect(opponent.getByRole("button", { name: /Draw stock/ })).toBeEnabled();
+  await expect(acceptingPlayer.page.locator(".game-error")).toHaveCount(0);
 });

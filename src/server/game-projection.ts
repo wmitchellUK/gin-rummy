@@ -4,7 +4,14 @@ import type {
   PlayerGameView, PublicCard, PublicLayoff, PublicMeld, RevealedPlayerHandView,
 } from "@/src/shared/game-view";
 
-export type PlayerSnapshot = { readonly userId: string; readonly seat: 0 | 1; readonly displayName: string };
+export type GameMode = "MULTIPLAYER" | "SINGLE_PLAYER";
+export type PlayerSnapshot = {
+  readonly playerId: string;
+  readonly userId: string | null;
+  readonly kind: "HUMAN" | "BOT";
+  readonly seat: 0 | 1;
+  readonly displayName: string;
+};
 
 function controls(state: GameState, userId: string): readonly LegalControl[] {
   if (state.phase === "OPENING_NON_DEALER" || state.phase === "OPENING_DEALER") return state.currentPlayerId === userId ? ["PASS_INITIAL_UPCARD", "TAKE_INITIAL_UPCARD"] : [];
@@ -32,7 +39,7 @@ function pair<T>(items: readonly T[]): readonly [T, T] {
 }
 
 function projectHandResult(result: HandResult, snapshots: readonly PlayerSnapshot[]): HandResultView {
-  const nameFor = (playerId: string) => snapshots.find((snapshot) => snapshot.userId === playerId)?.displayName ?? "Player";
+  const nameFor = (playerId: string) => snapshots.find((snapshot) => snapshot.playerId === playerId)?.displayName ?? "Player";
   const scoresAfter = result.kind === "SCORED"
     ? result.players.map((player): HandScoreView => ({ playerId: player.playerId, displayName: nameFor(player.playerId), score: result.scoresAfter[player.playerId] }))
     : Object.entries(result.scoresAfter).map(([playerId, score]): HandScoreView => ({ playerId, displayName: nameFor(playerId), score }));
@@ -58,7 +65,7 @@ function projectHandResult(result: HandResult, snapshots: readonly PlayerSnapsho
 }
 
 function projectGameResult(result: GameResult, snapshots: readonly PlayerSnapshot[]): GameResultView {
-  const nameFor = (playerId: string) => snapshots.find((snapshot) => snapshot.userId === playerId)?.displayName ?? "Player";
+  const nameFor = (playerId: string) => snapshots.find((snapshot) => snapshot.playerId === playerId)?.displayName ?? "Player";
   const finalScores = Object.entries(result.finalScores).map(([playerId, score]): HandScoreView => ({
     playerId,
     displayName: nameFor(playerId),
@@ -87,30 +94,36 @@ function projectGameResult(result: GameResult, snapshots: readonly PlayerSnapsho
 }
 
 /** The sole GameState-to-browser serializer. Do not add canonical fields here. */
-export function projectGameState(state: GameState, userId: string, snapshots: readonly PlayerSnapshot[], rematchRequestedBy?: string | null): PlayerGameView {
-  const player = state.players.find((item) => item.id === userId);
+export function projectGameState(
+  state: GameState,
+  userId: string,
+  snapshots: readonly PlayerSnapshot[],
+  mode: GameMode = "MULTIPLAYER",
+  rematchRequestedBy?: string | null,
+): PlayerGameView {
   const self = snapshots.find((item) => item.userId === userId);
+  const player = state.players.find((item) => item.id === self?.playerId);
   if (!player || !self) throw new Error("Projection requested for a non-player.");
-  const other = state.players.find((item) => item.id !== userId);
-  const otherSnapshot = snapshots.find((item) => item.userId === other?.id);
+  const other = state.players.find((item) => item.id !== player.id);
+  const otherSnapshot = snapshots.find((item) => item.playerId === other?.id);
   const result = state.phase === "HAND_COMPLETE" ? projectHandResult(state.handResult, snapshots) : undefined;
   const gameResult = state.phase === "GAME_COMPLETE" ? projectGameResult(state.gameResult, snapshots) : undefined;
   const meldCandidates = status(state) === "PLAYING" ? generateCandidateMelds(player.hand).map(publicMeld) : undefined;
   const nextHandReadiness = state.phase === "HAND_COMPLETE" ? {
-    you: state.nextHandAcknowledgements.includes(userId as never),
+    you: state.nextHandAcknowledgements.includes(player.id),
     opponent: other ? state.nextHandAcknowledgements.includes(other.id) : false,
   } : undefined;
   const turnRestrictions = state.phase === "AWAITING_DISCARD"
-    && state.currentPlayerId === userId
+    && state.currentPlayerId === player.id
     && state.forbiddenDiscardId !== null
     ? { cannotDiscardCardId: state.forbiddenDiscardId }
     : undefined;
   const drawnStockCardId = state.phase === "AWAITING_DISCARD"
-    && state.currentPlayerId === userId
+    && state.currentPlayerId === player.id
     && state.drawSource === "STOCK"
     ? state.drawnCardId
     : undefined;
-  const discardOutcomes = state.phase === "AWAITING_DISCARD" && state.currentPlayerId === userId
+  const discardOutcomes = state.phase === "AWAITING_DISCARD" && state.currentPlayerId === player.id
     ? player.hand.flatMap((card): readonly DiscardOutcomeView[] => {
       if (card.id === state.forbiddenDiscardId) return [];
       const deadwoodValue = analyzeHand(player.hand.filter((item) => item.id !== card.id)).deadwoodValue;
@@ -122,12 +135,16 @@ export function projectGameState(state: GameState, userId: string, snapshots: re
     })
     : undefined;
   return {
-    gameId: state.gameId, version: state.version, status: status(state), phase: state.phase, rules: state.rules,
+    gameId: state.gameId, version: state.version, mode, status: status(state), phase: state.phase, rules: state.rules,
     you: { seat: self.seat, displayName: self.displayName, score: player.matchScore, hand: player.hand, ...(meldCandidates ? { meldCandidates } : {}) },
-    ...(other && otherSnapshot ? { opponent: { seat: otherSnapshot.seat, displayName: otherSnapshot.displayName, score: other.matchScore, cardCount: other.hand.length } } : {}),
+    ...(other && otherSnapshot ? { opponent: { seat: otherSnapshot.seat, displayName: otherSnapshot.displayName, kind: otherSnapshot.kind, score: other.matchScore, cardCount: other.hand.length } } : {}),
     dealerId: state.dealerId, ...("currentPlayerId" in state ? { currentPlayerId: state.currentPlayerId } : {}),
     stockCount: state.stock.length, discardPile: state.discardPile,
-    ...("initialUpcard" in state ? { initialUpcard: state.initialUpcard } : {}), legalControls: controls(state, userId),
+    ...("initialUpcard" in state ? { initialUpcard: state.initialUpcard } : {}), legalControls: controls(state, player.id),
+    botActionPending: mode === "SINGLE_PLAYER" && Boolean(other && otherSnapshot?.kind === "BOT" && (
+      ((state.phase === "OPENING_NON_DEALER" || state.phase === "OPENING_DEALER" || state.phase === "AWAITING_DRAW" || state.phase === "AWAITING_DISCARD") && state.currentPlayerId === other.id)
+      || (state.phase === "HAND_COMPLETE" && !state.nextHandAcknowledgements.includes(other.id))
+    )),
     ...(turnRestrictions ? { turnRestrictions } : {}),
     ...(drawnStockCardId ? { drawnStockCardId } : {}),
     ...(discardOutcomes ? { discardOutcomes } : {}),

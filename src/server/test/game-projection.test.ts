@@ -22,10 +22,26 @@ function started(): GameState {
 }
 
 describe("browser game projection", () => {
+  it("identifies a pending computer turn without exposing Nia's cards", () => {
+    const state = started();
+    const view = projectGameState(state, p1, [
+      { playerId: p1, userId: p1, kind: "HUMAN", seat: 0, displayName: "Ada" },
+      { playerId: p2, userId: null, kind: "BOT", seat: 1, displayName: "Nia" },
+    ], "SINGLE_PLAYER");
+
+    expect(view).toMatchObject({
+      mode: "SINGLE_PLAYER",
+      botActionPending: true,
+      opponent: { displayName: "Nia", kind: "BOT", cardCount: 10 },
+    });
+    const payload = JSON.stringify(view);
+    for (const card of state.players[1]!.hand) expect(payload).not.toContain(card.id);
+  });
+
   it("includes the viewer hand but never the opponent hand or stock cards", () => {
     const state = started();
     const view = projectGameState(state, p1, [
-      { userId: p1, seat: 0, displayName: "Ada" }, { userId: p2, seat: 1, displayName: "Bea" },
+      { playerId: p1, userId: p1, kind: "HUMAN", seat: 0, displayName: "Ada" }, { playerId: p2, userId: p2, kind: "HUMAN", seat: 1, displayName: "Bea" },
     ]);
     const payload = JSON.stringify(view);
     expect(view.you.hand).toEqual(state.players[0]!.hand);
@@ -44,7 +60,7 @@ describe("browser game projection", () => {
       nextHandAcknowledgements: [] as PlayerId[],
     } as GameState;
     const view = projectGameState(cancelled, p1, [
-      { userId: p1, seat: 0, displayName: "Ada" }, { userId: p2, seat: 1, displayName: "Bea" },
+      { playerId: p1, userId: p1, kind: "HUMAN", seat: 0, displayName: "Ada" }, { playerId: p2, userId: p2, kind: "HUMAN", seat: 1, displayName: "Bea" },
     ]);
     expect(JSON.stringify(view.handResult)).not.toContain("revealedHand");
   });
@@ -62,7 +78,7 @@ describe("browser game projection", () => {
       ...base, phase: "HAND_COMPLETE" as const, players: scored.players, handHistory: [scored.result],
       handResult: scored.result, nextHandAcknowledgements: [] as PlayerId[],
     } as GameState;
-    const players = [{ userId: P1, seat: 0 as const, displayName: "Ada" }, { userId: P2, seat: 1 as const, displayName: "Bea" }];
+    const players = [{ playerId: P1, userId: P1, kind: "HUMAN" as const, seat: 0 as const, displayName: "Ada" }, { playerId: P2, userId: P2, kind: "HUMAN" as const, seat: 1 as const, displayName: "Bea" }];
     const ada = projectGameState(completed, P1, players);
     const bea = projectGameState(completed, P2, players);
 
@@ -123,7 +139,7 @@ describe("browser game projection", () => {
     const state = { ...base, stock: remaining.slice(0, 20), discardPile: [kDiamond, ...remaining.slice(20)] };
     const drawn = applyAction(state, { type: "DRAW_DISCARD", actorId: P1, actionId, expectedVersion: state.version });
     if (!drawn.ok || drawn.nextState.phase !== "AWAITING_DISCARD") throw new Error("fixture failed");
-    const players = [{ userId: P1, seat: 0 as const, displayName: "Ada" }, { userId: P2, seat: 1 as const, displayName: "Bea" }];
+    const players = [{ playerId: P1, userId: P1, kind: "HUMAN" as const, seat: 0 as const, displayName: "Ada" }, { playerId: P2, userId: P2, kind: "HUMAN" as const, seat: 1 as const, displayName: "Bea" }];
 
     const view = projectGameState(drawn.nextState, P1, players);
     expect(view.turnRestrictions).toEqual({ cannotDiscardCardId: "K:DIAMONDS" });
@@ -139,7 +155,7 @@ describe("browser game projection", () => {
       hand("A♥ 2♥ 3♥ 4♣ 5♣ 6♣ 10♦ J♦ Q♦ K♦ 9♠"),
       hand("A♣ 2♣ 3♣ 7♥ 8♥ 9♥ Q♠ Q♥ Q♣ 5♦"),
     );
-    const players = [{ userId: P1, seat: 0 as const, displayName: "Ada" }, { userId: P2, seat: 1 as const, displayName: "Bea" }];
+    const players = [{ playerId: P1, userId: P1, kind: "HUMAN" as const, seat: 0 as const, displayName: "Ada" }, { playerId: P2, userId: P2, kind: "HUMAN" as const, seat: 1 as const, displayName: "Bea" }];
 
     const active = projectGameState(state, P1, players);
     expect(active.discardOutcomes).toHaveLength(11);
@@ -162,7 +178,7 @@ describe("browser game projection", () => {
     if (!drawn.ok || drawn.nextState.phase !== "AWAITING_DISCARD") throw new Error("fixture failed");
     const drawnState = drawn.nextState;
     if (!drawnState.drawnCardId) throw new Error("fixture failed");
-    const players = [{ userId: P1, seat: 0 as const, displayName: "Ada" }, { userId: P2, seat: 1 as const, displayName: "Bea" }];
+    const players = [{ playerId: P1, userId: P1, kind: "HUMAN" as const, seat: 0 as const, displayName: "Ada" }, { playerId: P2, userId: P2, kind: "HUMAN" as const, seat: 1 as const, displayName: "Bea" }];
 
     expect(projectGameState(drawnState, P1, players).drawnStockCardId).toBe(drawnState.drawnCardId);
     expect(projectGameState(drawnState, P2, players).drawnStockCardId).toBeUndefined();
@@ -218,7 +234,7 @@ describe("action input boundary", () => {
 
   it("returns the same safe projection after a refresh/refetch", () => {
     const state = started();
-    const players = [{ userId: p1, seat: 0 as const, displayName: "Ada" }, { userId: p2, seat: 1 as const, displayName: "Bea" }];
+    const players = [{ playerId: p1, userId: p1, kind: "HUMAN" as const, seat: 0 as const, displayName: "Ada" }, { playerId: p2, userId: p2, kind: "HUMAN" as const, seat: 1 as const, displayName: "Bea" }];
     expect(projectGameState(state, p1, players)).toEqual(projectGameState(state, p1, players));
   });
 });

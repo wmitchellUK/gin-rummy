@@ -26,6 +26,8 @@ declare function applyAction(
 
 The server owns authorization, idempotency, persistence, transactions, and projection of canonical state into player-safe views. Browser payloads must be parsed into a client intent, authorized, and converted into a trusted `GameAction` before calling the engine. In particular, a browser must never be allowed to provide a shuffled deck, choose the first dealer, claim a score, or submit resulting state.
 
+Computer strategy is also outside this engine. `src/bot` is a pure TypeScript consumer of engine analysis functions, but receives a deliberately limited observation containing only the bot hand and public play. The server converts its selected intent into the same `GameAction` union used for humans; legality, declaration, scoring, and state transitions remain exclusively owned here.
+
 The canonical `GameState` contains both hands and the stock order. It must therefore never be serialized directly to a client. A separate server-side projection layer must reveal only the requesting player's hand, the public discard pile, scores, counts, and legitimately revealed hand results. Engine events use explicit visibility for the same reason.
 
 ## Card model and notation

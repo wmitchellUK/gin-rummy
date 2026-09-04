@@ -10,8 +10,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ga
     if (!parsed) return NextResponse.json({ error: { code: "INVALID_ACTION" } }, { status: 400 });
     const { gameId } = await context.params;
     const userId = await requireUserId();
-    await requireMembership(gameId, userId);
-    const result = await applyPlayerAction(gameId, userId, parsed);
+    const membership = await requireMembership(gameId, userId);
+    const result = await applyPlayerAction(gameId, membership.playerId, parsed);
     if (result.errorCode) return NextResponse.json({ error: { code: result.errorCode }, game: result.view }, { status: result.stale ? 409 : 400 });
     if (result.stale) return NextResponse.json({ error: { code: "STALE_VERSION" }, game: result.view }, { status: 409 });
     return NextResponse.json({ game: result.view });

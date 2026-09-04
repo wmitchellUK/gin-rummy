@@ -1,5 +1,5 @@
 begin;
-select plan(18);
+select plan(24);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -54,6 +54,22 @@ select is((select game_id from public.accept_rematch(
 )), '80000000-0000-4000-8000-000000000002'::uuid, 'a repeated acceptance returns the existing rematch');
 select is((select count(*) from public.games where source_game_id = '80000000-0000-4000-8000-000000000001'), 1::bigint, 'only one rematch exists per source game');
 select is((select count(*) from public.games where id = '80000000-0000-4000-8000-000000000003'), 0::bigint, 'the repeated acceptance does not create its proposed game');
+
+select lives_ok($$select public.create_bot_game(
+  '90000000-0000-4000-8000-000000000001',
+  '90000000-0000-4000-8000-000000000002',
+  '50000000-0000-4000-8000-000000000001',
+  'Creator',
+  '{"knockThreshold":10,"ginBonus":25,"undercutBonus":25,"matchTarget":100}'::jsonb,
+  '{"gameId":"90000000-0000-4000-8000-000000000001","version":1,"phase":"OPENING_NON_DEALER","players":[{"id":"50000000-0000-4000-8000-000000000001"},{"id":"90000000-0000-4000-8000-000000000002"}]}'::jsonb,
+  '[]'::jsonb,
+  null
+)$$, 'single-player creation is atomic without a bot Auth user');
+select is((select game_mode from public.games where id = '90000000-0000-4000-8000-000000000001'), 'SINGLE_PLAYER', 'single-player mode is recorded');
+select is((select count(*) from public.game_players where game_id = '90000000-0000-4000-8000-000000000001'), 2::bigint, 'single-player game has two participants');
+select is((select count(*) from public.game_players where game_id = '90000000-0000-4000-8000-000000000001' and player_kind = 'BOT' and user_id is null and display_name = 'Nia'), 1::bigint, 'Nia is a non-auth bot participant');
+select is((select count(*) from auth.users where id = '90000000-0000-4000-8000-000000000002'), 0::bigint, 'creating Nia does not create an Auth account');
+select is((select count(*) from public.game_actions where game_id = '90000000-0000-4000-8000-000000000001' and actor_id = '50000000-0000-4000-8000-000000000001'), 1::bigint, 'the trusted start receipt belongs to the human participant');
 
 select * from finish();
 rollback;

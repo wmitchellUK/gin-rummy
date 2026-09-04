@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { ensureAnonymousSession } from "@/lib/supabase/anonymous";
@@ -15,6 +16,10 @@ import { CardFace, CardMark, cardLabel } from "./game-card";
 
 type ApiResponse = { game?: PlayerGameView; rematchGameId?: string; error?: { code?: string } };
 type RecentGame = { gameId: string; opponent: string; updatedAt: number };
+
+export function newestGameView(current: PlayerGameView | undefined, incoming: PlayerGameView): PlayerGameView {
+  return !current || current.gameId !== incoming.gameId || incoming.version >= current.version ? incoming : current;
+}
 
 async function jsonRequest(path: string, init?: RequestInit): Promise<{ response: Response; body: ApiResponse }> {
   const response = await fetch(path, { ...init, credentials: "same-origin", headers: { "content-type": "application/json", ...init?.headers } });
@@ -35,12 +40,20 @@ function GameScreenContent({ gameId }: { gameId: string }) {
   const [error, setError] = useState("");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [loadedOrderGameId, setLoadedOrderGameId] = useState<string>();
+  const gameRef = useRef<PlayerGameView | undefined>(undefined);
+  const actionInFlight = useRef(false);
+  const botWakeVersion = useRef<string | null>(null);
+
+  const acceptGameView = useCallback((incoming: PlayerGameView) => {
+    gameRef.current = newestGameView(gameRef.current, incoming);
+    setGame((current) => newestGameView(current, incoming));
+  }, []);
 
   const refresh = useCallback(async () => {
     const { response, body } = await jsonRequest(`/api/games/${gameId}`);
     if (!response.ok || !body.game) throw new Error(body.error?.code ?? "GAME_NOT_FOUND");
-    setGame((current) => !current || body.game!.version >= current.version ? body.game : current);
-  }, [gameId]);
+    acceptGameView(body.game);
+  }, [acceptGameView, gameId]);
 
   useEffect(() => {
     let active = true;
@@ -80,22 +93,61 @@ function GameScreenContent({ gameId }: { gameId: string }) {
     if (loadedOrderGameId === gameId) saveOrder(gameId, order);
   }, [gameId, loadedOrderGameId, order]);
 
+  useEffect(() => {
+    if (!game?.botActionPending) {
+      botWakeVersion.current = null;
+      return;
+    }
+    const wakeKey = `${game.gameId}:${game.version}`;
+    if (botWakeVersion.current === wakeKey) return;
+    botWakeVersion.current = wakeKey;
+    const range = game.phase === "AWAITING_DISCARD" ? [900, 1600] : game.phase === "HAND_COMPLETE" ? [600, 1000] : [700, 1200];
+    const delay = range[0]! + Math.floor(Math.random() * (range[1]! - range[0]!));
+    const timer = window.setTimeout(() => {
+      void jsonRequest(`/api/games/${gameId}/bot-action`, {
+        method: "POST",
+        body: JSON.stringify({ expectedVersion: game.version }),
+      }).then(({ response, body }) => {
+        if (body.game) acceptGameView(body.game);
+        if (!response.ok) throw new Error(body.error?.code ?? "BOT_ACTION_FAILED");
+      }).catch(() => {
+        botWakeVersion.current = null;
+        void refresh().catch(() => undefined);
+      });
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [acceptGameView, game, gameId, refresh]);
+
+  useEffect(() => {
+    if (selectedCardId !== undefined && (game?.phase !== "AWAITING_DISCARD" || !game.you.hand.some((card) => card.id === selectedCardId))) {
+      setSelectedCardId(undefined);
+    }
+  }, [game, selectedCardId]);
+
   async function action(type: LegalControl, cardId?: string) {
-    if (!game || busy) return;
+    const current = gameRef.current ?? game;
+    if (!current || current.gameId !== gameId || actionInFlight.current || !current.legalControls.includes(type)) return;
+    if (cardId && !current.you.hand.some((card) => card.id === cardId)) {
+      setSelectedCardId(undefined);
+      setError("That card is no longer in your hand. The latest game has been loaded.");
+      void refresh().catch(() => undefined);
+      return;
+    }
+    actionInFlight.current = true;
     setBusy(true); setError("");
     try {
-      const { response, body } = await jsonRequest(`/api/games/${gameId}/actions`, { method: "POST", body: JSON.stringify({ expectedVersion: game.version, action: { actionId: crypto.randomUUID(), type, ...(cardId ? { cardId } : {}) } }) });
-      if (body.game) setGame(body.game);
+      const { response, body } = await jsonRequest(`/api/games/${gameId}/actions`, { method: "POST", body: JSON.stringify({ expectedVersion: current.version, action: { actionId: crypto.randomUUID(), type, ...(cardId ? { cardId } : {}) } }) });
+      if (body.game) acceptGameView(body.game);
       if (!response.ok) throw new Error(body.error?.code ?? "ACTION_FAILED");
       setSelectedCardId(undefined);
-    } catch (cause) { setError(actionMessage(cause)); void refresh().catch(() => undefined); } finally { setBusy(false); }
+    } catch (cause) { setError(actionMessage(cause)); void refresh().catch(() => undefined); } finally { actionInFlight.current = false; setBusy(false); }
   }
-  async function rematch(response: "REQUEST" | "ACCEPT") {
+  async function rematch(response: "REQUEST" | "ACCEPT" | "PLAY_AGAIN") {
     if (busy) return;
     setBusy(true); setError("");
     try {
       const result = await jsonRequest(`/api/games/${gameId}/rematch`, { method: "POST", body: JSON.stringify({ response }) });
-      if (result.body.game) setGame(result.body.game);
+      if (result.body.game) acceptGameView(result.body.game);
       if (!result.response.ok) throw new Error(result.body.error?.code ?? "REMATCH_UNAVAILABLE");
       if (result.body.rematchGameId) router.push(`/game/${result.body.rematchGameId}`);
     } catch (cause) { setError(actionMessage(cause)); } finally { setBusy(false); }
@@ -115,11 +167,11 @@ function GameScreenContent({ gameId }: { gameId: string }) {
   const isPlaying = gameplayControlsAreAvailable(game);
 
   return <main className="game-shell"><section className="game-table">
-    <header className="table-header"><Link className="wordmark" href="/">Gin <span>Rummy</span></Link><div className="table-tools"><span className="table-status">Private table</span><Link href="/settings" aria-label="Settings" className="icon-button">⚙</Link></div></header>
+    <header className="table-header"><Link className="wordmark" href="/">Gin <span>Rummy</span></Link><div className="table-tools"><span className="table-status">{game.mode === "SINGLE_PLAYER" ? "Table with Nia" : "Private table"}</span><Link href="/settings" aria-label="Settings" className="icon-button">⚙</Link></div></header>
     {game.status === "WAITING" ? <WaitingGame inviteUrl={inviteUrl} /> : isPlaying ? <>
-      <section className="opponent-area" aria-label="Opponent">
-        <div className="player-identity opponent-identity"><div className="avatar" aria-hidden="true">{initials(game.opponent?.displayName ?? "?")}</div><div className="identity-copy"><p className="eyebrow">Opponent <span className="connection"><i /> At table</span></p><div className="identity-line"><h1>{game.opponent?.displayName ?? "Opponent"}</h1><span className="identity-score"><span>Score</span>{game.opponent?.score ?? 0}</span></div><p className="seat-note">{game.opponent?.cardCount ?? 0} cards {game.dealerId ? "· Dealer" : ""}</p></div></div>
-        <OpponentHand count={game.opponent?.cardCount ?? 0} /><ScoreHud game={game} />
+      <section className="opponent-area" aria-label={game.opponent?.kind === "BOT" ? "Nia, computer opponent" : "Opponent"}>
+        <div className="player-identity opponent-identity"><div className={`avatar${game.opponent?.kind === "BOT" ? " bot-avatar" : ""}`} aria-hidden="true">{game.opponent?.kind === "BOT" ? <Image src="/avatars/nia-pomeranian.webp" alt="" width={64} height={64} priority /> : initials(game.opponent?.displayName ?? "?")}</div><div className="identity-copy"><p className="eyebrow">Opponent <span className="connection"><i /> {game.opponent?.kind === "BOT" ? "Computer opponent" : "At table"}</span></p><div className="identity-line"><h1>{game.opponent?.displayName ?? "Opponent"}</h1><span className="identity-score"><span>Score</span>{game.opponent?.score ?? 0}</span></div><p className="seat-note">{game.opponent?.cardCount ?? 0} cards {game.dealerId ? "· Dealer" : ""}</p></div></div>
+        <OpponentHand count={game.opponent?.cardCount ?? 0} name={game.opponent?.displayName ?? "Opponent"} /><ScoreHud game={game} />
       </section>
       <section className="table-center" aria-label="Public piles and turn status">
         <div className="piles">
@@ -138,7 +190,7 @@ function GameScreenContent({ gameId }: { gameId: string }) {
   </section></main>;
 }
 
-function OpponentHand({ count }: { count: number }) { return <div className="opponent-hand" aria-label={`Opponent has ${count} cards`}>{Array.from({ length: count }, (_, index) => <span className="opponent-card" style={{ "--card-index": index, "--card-count": count } as CSSProperties} key={index}><CardBack /></span>)}</div>; }
+function OpponentHand({ count, name }: { count: number; name: string }) { return <div className="opponent-hand" aria-label={`${name} has ${count} cards`}>{Array.from({ length: count }, (_, index) => <span className="opponent-card" style={{ "--card-index": index, "--card-count": count } as CSSProperties} key={index}><CardBack /></span>)}</div>; }
 function ScoreHud({ game }: { game: PlayerGameView }) { return <aside className="score-hud" aria-label="Match scores"><p>First to {game.rules.matchTarget}</p><dl><div><dt>You</dt><dd>{game.you.score}</dd></div><div><dt>{game.opponent?.displayName ?? "Opponent"}</dt><dd>{game.opponent?.score ?? 0}</dd></div></dl></aside>; }
 function TurnPrompt({ game, active, selected, selectedActions }: { game: PlayerGameView; active: boolean; selected?: PublicCard; selectedActions: ReturnType<typeof selectedDiscardActionAvailability> }) { return <div className={`turn-prompt${active ? " is-active" : ""}`} role="status" aria-live="polite" aria-atomic="true"><span className="turn-dot" /><p><strong>{active ? "Your turn" : `${game.opponent?.displayName ?? "Opponent"} is playing`}</strong><span aria-hidden="true"> · </span>{turnInstruction(game, selected, selectedActions)}</p></div>; }
 function CardBack() { return <span className="card-back" aria-hidden="true"><span>R</span></span>; }
@@ -166,16 +218,18 @@ export function HandCompleteResult({ game, onStartNextHand, canStartNextHand }: 
     {footer}
   </ResultOverlay>;
 }
-export function GameResult({ game, busy, onRematch }: { game: PlayerGameView; busy: boolean; onRematch: (response: "REQUEST" | "ACCEPT") => Promise<void> }) {
+export function GameResult({ game, busy, onRematch }: { game: PlayerGameView; busy: boolean; onRematch: (response: "REQUEST" | "ACCEPT" | "PLAY_AGAIN") => Promise<void> }) {
   const result = game.gameResult;
   if (!result) return null;
   return <ResultOverlay title="Match complete" kicker="A fine game">
     <div className="match-winner"><span>Winner</span><strong>{result.winnerName}</strong><small>First to {result.matchTarget}</small></div>
     <MatchScores scores={result.finalScores} />
     <section className="hand-history" aria-labelledby="hand-history-title"><h2 id="hand-history-title">Hand history</h2>{result.completedHands.map((hand) => <div key={hand.handNumber}><span>Hand {hand.handNumber}</span><strong>{hand.kind === "CANCELLED" ? "No score" : `${hand.winnerName} +${hand.pointsAwarded}`}</strong><small>{hand.kind === "CANCELLED" ? "Stock exhausted" : hand.scoringReason === "GIN" ? "Gin" : hand.scoringReason === "UNDERCUT" ? "Undercut" : "Knock"}</small></div>)}</section>
-    {!game.rematch && <button className="action-button primary result-primary" onClick={() => void onRematch("REQUEST")} disabled={busy}>Request rematch</button>}
-    {game.rematch?.requestedBy === "YOU" && <p className="waiting-status"><i /> Rematch requested — waiting for your opponent</p>}
-    {game.rematch?.requestedBy === "OPPONENT" && <button className="action-button primary result-primary" onClick={() => void onRematch("ACCEPT")} disabled={busy}>Accept rematch</button>}
+    {game.mode === "SINGLE_PLAYER" ? <button className="action-button primary result-primary" onClick={() => void onRematch("PLAY_AGAIN")} disabled={busy}>Play Nia again</button> : <>
+      {!game.rematch && <button className="action-button primary result-primary" onClick={() => void onRematch("REQUEST")} disabled={busy}>Request rematch</button>}
+      {game.rematch?.requestedBy === "YOU" && <p className="waiting-status"><i /> Rematch requested — waiting for your opponent</p>}
+      {game.rematch?.requestedBy === "OPPONENT" && <button className="action-button primary result-primary" onClick={() => void onRematch("ACCEPT")} disabled={busy}>Accept rematch</button>}
+    </>}
     <Link className="quiet-link" href="/">Return home</Link>
   </ResultOverlay>;
 }
@@ -218,7 +272,20 @@ function scoreFormula(result: Extract<HandResultView, { kind: "SCORED" }>, decla
 function turnInstruction(game: PlayerGameView, selected?: PublicCard, selectedActions?: ReturnType<typeof selectedDiscardActionAvailability>) { if (game.phase === "OPENING_NON_DEALER" || game.phase === "OPENING_DEALER") return game.legalControls.length ? "Take the up-card or pass" : "Considering the up-card"; if (game.phase === "AWAITING_DRAW") return game.legalControls.length ? "Draw a card" : "Choosing a draw"; if (game.phase === "AWAITING_DISCARD") { if (!game.legalControls.length) return "Choosing a discard"; if (selectedActions?.isProhibitedDiscard) return "Choose another card"; if (selectedActions?.canGin) return "You can Gin!"; if (selectedActions?.canKnock) return "Discard or knock"; return selected ? "Discard the selected card" : "Choose a card to discard"; } return "Review the hand result"; }
 function initials(value: string) { return value.slice(0, 2).toUpperCase(); }
 function Meld({ kind, cards }: Pick<PublicMeld, "kind" | "cards">) { return <>{kind === "RUN" ? "Run" : "Set"}: {cards.map((card) => <CardMark card={card} key={card.id} />)}</>; }
-function actionMessage(cause: unknown) { if (!(cause instanceof Error)) return "Action failed. Please try again."; if (cause.message === "STALE_VERSION") return "The game changed. The latest state has been loaded."; if (cause.message === "WRONG_PLAYER") return "It is not your turn."; if (cause.message === "KNOCK_DEADWOOD_TOO_HIGH") return "That hand cannot knock yet."; if (cause.message === "GIN_REQUIRES_ZERO_DEADWOOD") return "Gin requires zero deadwood."; return "That action is not available right now."; }
+export function actionMessage(cause: unknown) {
+  if (!(cause instanceof Error)) return "Action failed. Please try again.";
+  if (cause.message === "STALE_VERSION") return "The game changed. The latest state has been loaded.";
+  if (cause.message === "WRONG_PLAYER") return "It is not your turn.";
+  if (cause.message === "ACTION_NOT_ALLOWED_IN_PHASE") return "That move is no longer available. The latest game has been loaded.";
+  if (cause.message === "CARD_NOT_IN_HAND") return "That card is no longer in your hand. The latest game has been loaded.";
+  if (cause.message === "ILLEGAL_REDISCARD") return "You can’t discard the face-up card you just picked up. Choose another card.";
+  if (cause.message === "STOCK_DRAW_REQUIRED") return "After both players pass, you must draw from the stock.";
+  if (cause.message === "KNOCK_DEADWOOD_TOO_HIGH") return "That hand cannot knock yet.";
+  if (cause.message === "GIN_REQUIRES_ZERO_DEADWOOD") return "Gin requires zero deadwood.";
+  if (cause.message === "GIN_ACTION_REQUIRED") return "This hand must be declared as gin.";
+  if (cause.message === "INTERNAL_ERROR") return "We couldn’t record that move. Try again.";
+  return "That action is not available right now.";
+}
 
 const handOrderKey = (gameId: string) => `gin-rummy:hand-order:v1:${gameId}`;
 function readSavedOrder(gameId: string): string[] {

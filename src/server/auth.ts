@@ -15,8 +15,8 @@ export async function requireUserId(): Promise<string> {
 
 export async function requireMembership(gameId: string, userId: string) {
   const admin = createAdminClient();
-  const { data, error } = await admin.from("game_players").select("seat, display_name").eq("game_id", gameId).eq("user_id", userId).maybeSingle();
+  const { data, error } = await admin.from("game_players").select("participant_id, seat, display_name").eq("game_id", gameId).eq("user_id", userId).maybeSingle();
   if (error) throw new Error("Could not verify game membership.");
   if (!data) throw new HttpError(404, "GAME_NOT_FOUND");
-  return { seat: data.seat as 0 | 1, displayName: data.display_name as string };
+  return { playerId: data.participant_id as string, seat: data.seat as 0 | 1, displayName: data.display_name as string };
 }

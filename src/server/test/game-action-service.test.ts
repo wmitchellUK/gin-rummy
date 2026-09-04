@@ -26,8 +26,8 @@ const p1 = "11111111-1111-4111-8111-111111111111" as PlayerId;
 const p2 = "22222222-2222-4222-8222-222222222222" as PlayerId;
 const gameId = "99999999-9999-4999-8999-999999999999";
 const snapshots = [
-  { userId: p1, seat: 0 as const, displayName: "Ada" },
-  { userId: p2, seat: 1 as const, displayName: "Bea" },
+  { playerId: p1, userId: p1, kind: "HUMAN" as const, seat: 0 as const, displayName: "Ada" },
+  { playerId: p2, userId: p2, kind: "HUMAN" as const, seat: 1 as const, displayName: "Bea" },
 ];
 
 function action(actionId: string, expectedVersion = 1): ParsedActionRequest {
@@ -53,7 +53,7 @@ describe("authoritative game action service", () => {
   beforeEach(() => {
     persisted = openingState();
     repository.findActionReceipt.mockReset().mockResolvedValue(null);
-    repository.loadCanonicalGame.mockReset().mockImplementation(async () => ({ state: persisted, snapshots, status: "PLAYING" }));
+    repository.loadCanonicalGame.mockReset().mockImplementation(async () => ({ state: persisted, snapshots, status: "PLAYING", mode: "MULTIPLAYER", botProfile: null, rematchRequestedBy: null }));
     repository.commitGameAction.mockReset().mockImplementation(async (input: { expectedVersion: number; nextState: GameState }) => {
       if (persisted.version !== input.expectedVersion) return { outcome: "STALE", version: persisted.version };
       persisted = input.nextState;
@@ -76,6 +76,37 @@ describe("authoritative game action service", () => {
     const payload = JSON.stringify(result.view);
     for (const card of persisted.players[0]!.hand) expect(payload).not.toContain(card.id);
     for (const card of persisted.stock) expect(payload).not.toContain(card.id);
+  });
+
+  it("lets the dealer discard a different card after taking the initial up-card", async () => {
+    const pass = await applyPlayerAction(gameId, p2, {
+      expectedVersion: 1,
+      action: { actionId: "12111111-1111-4111-8111-111111111111", type: "PASS_INITIAL_UPCARD" },
+    });
+    expect(pass).toMatchObject({ stale: false, view: { version: 2, phase: "OPENING_DEALER" } });
+
+    const take = await applyPlayerAction(gameId, p1, {
+      expectedVersion: 2,
+      action: { actionId: "12222222-2222-4222-8222-222222222222", type: "TAKE_INITIAL_UPCARD" },
+    });
+    expect(take).toMatchObject({ stale: false, view: { version: 3, phase: "AWAITING_DISCARD" } });
+    if (persisted.phase !== "AWAITING_DISCARD") throw new Error("fixture failed");
+    const forbiddenDiscardId = persisted.forbiddenDiscardId;
+    const otherCard = persisted.players.find((player) => player.id === p1)!.hand.find((card) => card.id !== forbiddenDiscardId)!;
+
+    const discard = await applyPlayerAction(gameId, p1, {
+      expectedVersion: 3,
+      action: { actionId: "12333333-3333-4333-8333-333333333333", type: "DISCARD", cardId: otherCard.id },
+    });
+
+    expect(discard).toMatchObject({ stale: false, view: { version: 4, phase: "AWAITING_DRAW" } });
+    expect(discard.errorCode).toBeUndefined();
+    expect(persisted.discardPile[0]).toEqual(otherCard);
+    expect(repository.commitGameAction).toHaveBeenLastCalledWith(expect.objectContaining({
+      expectedVersion: 3,
+      actionType: "DISCARD",
+      cardId: otherCard.id,
+    }));
   });
 
   it("returns the current projection on a stale version without persisting", async () => {

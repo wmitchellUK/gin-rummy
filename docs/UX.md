@@ -12,6 +12,8 @@ The dark, lightly textured green felt gives depth without visual noise. Warm alm
 
 The supplied end-of-hand example succeeds as a focused overlay: it freezes the table behind a dark surface, names the outcome, then explains the two players’ score calculation before asking for the next commitment. Its mobile view preserves the same hierarchy by stacking opponent, piles, status, player hand, and actions—not by shrinking desktop wholesale. Preserve these relationships and materials, but use real text/status, accessible controls, and responsive sizing instead of relying on ornament or color alone.
 
+Single-player uses the same table. The opponent is Nia, identified in text as a computer opponent and represented by a restrained painted Pomeranian portrait. The portrait is decorative beside the accessible name. Nia has no dialogue, taunts, mascot animation, or casino styling. Her opening/draw and discard decisions appear as separate, short thinking beats so public actions remain understandable.
+
 ## Design tokens
 
 Use CSS custom properties/Tailwind theme equivalents. Texture, if used, must be extremely subtle and must not reduce contrast.
@@ -91,6 +93,7 @@ All user actions send an intent with the current version and idempotency key. Th
 | Meld organization | The server projects every rule-valid candidate from the caller’s own hand. Highlight only candidates whose cards are adjacent in the private display order, collapse contained same-kind subgroups to the longest label, and retain genuine Run/Set overlaps. Labels are cosmetic and never replace server discard, knock, gin, or deadwood decisions. |
 | Knock / gin | After card selection, show Knock with the server-projected post-discard deadwood count or Gin only when that declaration is legal for the selected discard. Keep ordinary discard available so the player may decline to declare. |
 | Opponent action | Retain the player’s view and show a concise status (“James drew from stock”, “James is choosing a discard”, “Your turn”). Do not animate or expose an opponent stock-drawn card. |
+| Nia action | Wake one server action at a time after a short phase-specific delay. On refresh, restart the pending wakeup from the latest projected version. Duplicate tabs and stale wakeups must remain harmless. |
 | Hand reveal / scoring | On server transition to hand complete, disable table controls, then open `HandResult`. Reveal cards only in the scored hand result and label melds, layoffs, deadwood, calculation, and updated score. |
 | Next hand | Each participant uses `Start next hand` / `Ready for next hand`. Show “Waiting for James” after local acknowledgement; deal only after both acknowledge. |
 | Match completion | Replace hand continuation with `GameResult`; show rematch request status and link to the new match only after mutual acceptance. |
