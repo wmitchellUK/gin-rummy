@@ -66,17 +66,21 @@ test("two anonymous browsers create, join, synchronize an action, and recover af
   await b.getByRole("button", { name: "Join game" }).click();
   await expect(a.getByRole("heading", { name: "Player A" })).toBeVisible();
   await expect(b.getByRole("heading", { name: "Player B" })).toBeVisible();
+  await Promise.all([a.setViewportSize({ width: 390, height: 844 }), b.setViewportSize({ width: 390, height: 844 })]);
 
   // Dealer is deliberately random, so drive the real server-selected active player.
   const firstPass = await firstEnabled([a, b], /^Pass$/);
+  expect(await firstPass.page.locator(".game-actions").evaluate((element) => getComputedStyle(element).position)).toBe("sticky");
+  await expect(firstPass.page.locator(".game-actions button")).toHaveCount(2);
   await firstPass.button.click();
   const secondPass = await firstEnabled([a, b], /^Pass$/);
   await secondPass.button.click();
   const draw = await firstEnabled([a, b], /Draw stock/);
   await draw.button.click();
+  await expect(draw.page.locator(".action-guidance")).toHaveText("Select a card to discard");
   const handCard = draw.page.locator(".card-hand [data-hand-card]").first();
-  await handCard.click();
-  await draw.page.getByRole("button", { name: "Discard", exact: true }).click();
+  await handCard.click({ position: { x: 10, y: 10 } });
+  await draw.page.getByRole("button", { name: /^Discard / }).click();
 
   const other = draw.page === a ? b : a;
   await expect(other.getByRole("button", { name: /Draw stock/ })).toBeEnabled();

@@ -1,6 +1,6 @@
-import type { Card, GameState, HandResult, Meld, PlayerHandResult } from "@/src/game";
+import { analyzeHand, type Card, type GameState, type HandResult, type Meld, type PlayerHandResult } from "@/src/game";
 import type {
-  HandResultView, HandScoreView, LegalControl, PlayerGameView, PublicCard, PublicLayoff,
+  DiscardOutcomeView, HandResultView, HandScoreView, LegalControl, PlayerGameView, PublicCard, PublicLayoff,
   PublicMeld, RevealedPlayerHandView,
 } from "@/src/shared/game-view";
 
@@ -76,6 +76,17 @@ export function projectGameState(state: GameState, userId: string, snapshots: re
     && state.drawSource === "STOCK"
     ? state.drawnCardId
     : undefined;
+  const discardOutcomes = state.phase === "AWAITING_DISCARD" && state.currentPlayerId === userId
+    ? player.hand.flatMap((card): readonly DiscardOutcomeView[] => {
+      if (card.id === state.forbiddenDiscardId) return [];
+      const deadwoodValue = analyzeHand(player.hand.filter((item) => item.id !== card.id)).deadwoodValue;
+      return [{
+        cardId: card.id,
+        deadwoodValue,
+        declaration: deadwoodValue === 0 ? "GIN" : deadwoodValue <= state.rules.knockThreshold ? "KNOCK" : null,
+      }];
+    })
+    : undefined;
   return {
     gameId: state.gameId, version: state.version, status: status(state), phase: state.phase, rules: state.rules,
     you: { seat: self.seat, displayName: self.displayName, score: player.matchScore, hand: player.hand },
@@ -85,6 +96,7 @@ export function projectGameState(state: GameState, userId: string, snapshots: re
     ...("initialUpcard" in state ? { initialUpcard: state.initialUpcard } : {}), legalControls: controls(state, userId),
     ...(turnRestrictions ? { turnRestrictions } : {}),
     ...(drawnStockCardId ? { drawnStockCardId } : {}),
+    ...(discardOutcomes ? { discardOutcomes } : {}),
     ...(result ? { handResult: result } : {}), ...(gameResult ? { gameResult } : {}),
     ...(rematchRequestedBy ? { rematch: { requestedBy: rematchRequestedBy === userId ? "YOU" : "OPPONENT" } } : {}),
   };

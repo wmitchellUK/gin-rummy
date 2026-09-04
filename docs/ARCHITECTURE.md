@@ -9,6 +9,12 @@ The pure TypeScript engine in src/game is the only rules authority. Trusted serv
 invokes it with canonical state and a trusted action. Browsers submit intent only; they
 cannot submit a deck, dealer, score, result, canonical state, or state transition.
 
+Card Studio is a separate presentation subsystem with a deliberately public prototype
+editor. PostgreSQL remains authoritative for its active published manifest, while the
+game engine, canonical game records, action RPCs, and player-safe projections have no
+card-art fields or dependencies. Open games resolve the current global presentation at
+render time instead of snapshotting artwork into game state.
+
 V1 signs visitors in anonymously before they create, join, or open a game. Each guest
 therefore has a genuine auth.users.id UUID without email/password friction. Supabase's
 SSR cookie/browser storage retains the session. Any future account-linking flow must
@@ -35,6 +41,14 @@ Postgres
 
 The public Supabase URL and anonymous key may exist in browser code. The service-role
 key exists only in server modules and is never public.
+
+The Card Studio boundary is narrower: browser code calls same-origin `/api/card-art`
+routes and renders returned public asset URLs. Route handlers pass mutations through
+`requireCardArtEditor`, then server-only services use the privileged repository. The
+prototype guard intentionally allows every caller; administrator authentication later
+replaces that one guard without moving credentials into the browser or changing the
+route, service, repository, or UI boundaries. Browser code never receives a service
+credential, imports the privileged repository, or writes to Supabase Storage directly.
 
 game_state.canonical_state contains both hands, the complete stock order, and all other
 canonical cards. game_events.payload can contain hidden draw/deal facts. Neither is
@@ -155,6 +169,46 @@ One row is inserted only when a match completes.
 Completed hand detail is persisted because it is safe to reveal to participants after
 scoring. The engine's cancelled hand result contains no hands.
 
+### card_art_sets
+
+This presentation-only table stores named mutable drafts and immutable published
+snapshots. Names are trimmed, 1–80 characters, and intentionally non-unique.
+
+| Column | Purpose |
+| --- | --- |
+| id uuid primary key | set identifier and randomized asset-path namespace |
+| name text not null | display name; uniqueness is not required |
+| draft_manifest jsonb not null | partial `FaceCardSlot` to immutable Storage object-path map |
+| draft_version integer not null | optimistic-concurrency token for slot mutations |
+| published_manifest jsonb not null | last atomically published draft snapshot |
+| published_revision integer not null | monotonic cache and publication revision |
+| archived_at timestamptz null | read-only archive marker |
+| created_at, updated_at timestamptz not null | audit fields |
+
+Draft replacement updates `draft_manifest` and `draft_version` only. It does not delete
+superseded processed objects because an older published snapshot may still reference
+them. Archived rows remain available for audit and cannot be edited or activated.
+
+### card_art_settings
+
+The singleton row contains `active_set_id` and `active_revision`. A null set with
+revision zero means the built-in design; a custom set requires a positive revision that
+matches the referenced set's published revision. Database triggers reject an archived
+or mismatched active target and reject archiving the active set. The activation RPC
+locks both settings and the selected set, checks the supplied draft and published
+versions, copies the draft to the published snapshot, increments the revision, and
+changes the global selection atomically. Reset locks settings and restores the built-in
+selection.
+
+### Card-art Storage
+
+The public `card-art` bucket contains processed 600×900 WebP assets only. Objects use
+immutable randomized paths under `sets/<set-id>/<slot>/<uuid>.webp`. Anonymous and
+authenticated roles may read objects, because artwork must render in public games, but
+they have no insert, update, or delete policy. All writes pass through the server-only
+repository using the service credential. Superseded processed assets stay readable if
+their randomized URL is known; asset garbage collection is out of scope.
+
 ## Migrations and transactional persistence
 
 Create ordered migrations under supabase/migrations/:
@@ -166,6 +220,9 @@ Create ordered migrations under supabase/migrations/:
 4. 0004_rls.sql enables RLS, revokes broad grants, and installs policies.
 5. 0005_commit_game_action.sql defines the server-only commit RPC.
 6. 0006_realtime.sql defines private-channel authorization policies.
+7. 0007 through 0013 refine lifecycle, invite, action, and rematch behavior.
+8. 0014_card_art_studio.sql adds the presentation-only Card Studio tables, Storage
+   policy, archive guards, and atomic activation/reset RPCs.
 
 commit_game_action is a plpgsql RPC callable only by the server service_role. It receives
 an engine-validated candidate state, derived game metadata and optional result, plus
@@ -237,6 +294,11 @@ Invite resolution is server-only. A non-member cannot query by invite code; a fu
 invalid invite gets a generic safe response. A share URL is an invitation to take an
 open seat, never a credential that reveals an existing player's private cards.
 
+Card Studio tables likewise grant no browser-role access. Public asset reads are the
+only direct Supabase access added for artwork. The editor's public prototype posture is
+implemented in the server guard, not by granting database or Storage mutations to
+anonymous clients.
+
 ## API boundaries
 
 Route handlers orchestrate authentication, repository access, engine execution, and
@@ -252,6 +314,50 @@ projection. They are not a second rules engine.
 | POST /api/games/[gameId]/actions | authoritative action application |
 | GET /api/history | member-safe summaries, newest first |
 | POST /api/games/[gameId]/rematch | request/accept/decline; acceptance creates new game |
+
+Card-art route handlers form a separate presentation API:
+
+| Endpoint | Responsibility |
+| --- | --- |
+| GET /api/card-art | return the active published manifest or built-in selection |
+| GET /api/card-art/sets?includeArchived=true | list editor-facing sets and versions |
+| POST /api/card-art/sets | create a named empty draft |
+| PATCH /api/card-art/sets/[setId] | rename or archive a non-archived, non-active set |
+| POST /api/card-art/sets/[setId]/slots/[slot] | validate, process, upload, and version a cropped draft image |
+| DELETE /api/card-art/sets/[setId]/slots/[slot] | remove a draft slot using its expected version |
+| POST /api/card-art/sets/[setId]/activate | atomically publish and globally activate the expected draft/revision |
+| POST /api/card-art/default/activate | restore the built-in global design |
+
+The shared public manifest contract is:
+
+~~~ts
+type FaceCardRank = "J" | "Q" | "K";
+type FaceCardSuit = "CLUBS" | "DIAMONDS" | "HEARTS" | "SPADES";
+type FaceCardSlot = `${FaceCardRank}:${FaceCardSuit}`;
+
+type ActiveCardArtManifest = {
+  source: "BUILT_IN" | "CUSTOM";
+  setId: string | null;
+  setName: string | null;
+  revision: number;
+  manifest: Partial<Record<FaceCardSlot, string>>;
+};
+~~~
+
+Set create/rename/archive and slot mutation responses return the current set record,
+including the new `draftVersion`. Activation returns the published `revision` and full
+active manifest shown above. Clients use these returned versions in later writes;
+draft and activation conflicts return stable HTTP 409 error codes and never overwrite
+the caller's current editor state.
+
+### Image ingestion
+
+The upload request reaches a Next.js route as multipart form data and is held only long
+enough for server processing. The server rejects input over 10 MB, SVG and unsupported
+formats, malformed/undecodable files, crops outside the normalized image, and images
+over 40 million pixels. Sharp auto-orients JPEG, PNG, or WebP input, applies the locked
+2:3 crop, resizes to 600×900, and encodes WebP at quality 85 without copying source
+metadata. Only that resulting buffer is uploaded; the original is never persisted.
 
 The action body is conceptually:
 
@@ -293,6 +399,12 @@ count, public discard pile, dealer/turn status, and the caller's sorted hand and
 controls. It includes only opponent name, seat, score, and card count. It includes the
 opening up-card and pass facts when public.
 
+During the caller's active discard decision, the projection also derives an outcome for
+each legal discard candidate: minimum post-discard deadwood and whether that candidate
+permits knock or gin. These outcomes are omitted for the non-active player and contain
+no opponent or stock information; the server still validates the submitted declaration
+against canonical state.
+
 After an engine-scored hand, it includes engine-permitted revealed hands, melds,
 deadwood, layoffs, declaration, and score. A cancelled result includes its reason and
 scores but neither hand. Game-complete data is likewise participant-safe.
@@ -320,6 +432,41 @@ pending intent and uses the returned projection.
 
 Guest seat recovery requires retained anonymous-session/browser storage. A share URL
 can join a waiting invite but cannot recover a lost guest private seat.
+
+## Card-art polling and rendering
+
+`CardArtProvider` is outside the canonical game-data provider. While the document is
+visible, it fetches `GET /api/card-art` immediately and every five seconds with
+`no-store`; it stops the interval and aborts an in-flight request while hidden, then
+refreshes immediately when visibility returns. Request identity and abort checks prevent
+an older response from replacing a newer one. A transient network, HTTP, or malformed
+response preserves the last successful manifest.
+
+Published object URLs carry the active revision as `?v=<revision>`, so a newly
+published snapshot changes the browser cache key. `CardFace` consults only the partial
+presentation manifest for J/Q/K. It keeps code-rendered ranks, suits, card stock,
+markers, and accessibility names, and layers uploaded art directly over the cream stock
+and beneath a separate ornamental frame. Alpha is preserved in processed WebP assets so
+transparent portrait cutouts reveal the card stock; opaque artwork remains compatible. Absent
+or failed images reveal the built-in court design underneath. The same renderer is used for the local hand, public discard, and
+completed-hand cards only after `PlayerGameView` already permits those cards to be
+visible. It never expands what the projection reveals.
+
+## Card-art isolation invariants
+
+- Service and legacy service-role environment variables are referenced only by the
+  `server-only` Supabase administrator module (with test runners checking configuration
+  only); they are never imported or serialized by client components.
+- Card-art database and Storage mutations are reachable only through server routes and
+  service-role repository calls. Public Storage policy grants reads, never raw writes.
+- The upload pipeline persists only the processed WebP buffer. No original upload path,
+  blob, or metadata is stored.
+- Service checks, the activation RPC, the active-settings validation trigger, and the
+  active-archive trigger prevent archived sets from becoming active and active sets
+  from being archived, even if the UI guard is bypassed.
+- No card-art identifier, revision, manifest, URL, or binary appears in `GameState`,
+  `game_state.canonical_state`, engine events/actions, or `PlayerGameView`. Artwork is
+  optional presentation data fetched independently of the game API.
 
 ## Source layout
 
@@ -360,6 +507,11 @@ Server modules import server-only. Client components must not import server modu
 canonical database types, or game-state types. Share request/view DTOs through a
 dependency-free module when needed.
 
+Card Studio follows that split in the root `app/api/card-art` and `app/card-studio`
+routes, `src/server/card-art-*` services, `src/shared/card-art.ts` contracts,
+`components/card-studio`, and the presentation-only card-art provider/renderer under
+`components/game`.
+
 ## Environment
 
 ~~~dotenv
@@ -391,6 +543,12 @@ The Vitest engine suite in GAME_ENGINE.md is the base. Add:
 - Targeted Playwright flows for anonymous create/join, full-game rejection, stale double
   submission, refresh in each product state, retry/reconnect, and network-response
   checks for private-card leakage.
+- Card Studio unit/component tests for slot and manifest validation, draft/published
+  isolation, Sharp decoding and sanitization, polling/visibility/stale responses,
+  optimistic conflict recovery, accessible crop/activation workflows, and image
+  fallback. pgTAP covers grants, RLS, Storage policy, atomic activation, version
+  conflicts, archive guards, and built-in reset. One two-context Playwright flow checks
+  shared published portraits without revealing either opponent hand.
 
 Run targeted tests during implementation. At major milestones run npm test, npm run
 lint, and npm run build.

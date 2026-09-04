@@ -23,7 +23,7 @@ This is a production-quality two-player Gin Rummy web application.
 - Game rules: `docs/GAME_ENGINE.md`
 - UX: `docs/UX.md`
 - Architecture: `docs/ARCHITECTURE.md`
-- Visual reference: `docs/assets/art-direction.png`
+- Visual reference: `docs/assets/gin-ui-reference.png`
 
 ## Engineering Rules
 
@@ -42,7 +42,7 @@ This is a production-quality two-player Gin Rummy web application.
 
 ## Visual Direction
 
-Inspect `docs/assets/art-direction.png` when doing game UI work.
+Inspect `docs/assets/gin-ui-reference.png` when doing game UI work.
 
 Preserve:
 

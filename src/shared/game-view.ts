@@ -10,6 +10,13 @@ export interface TurnRestrictions {
   readonly cannotDiscardCardId: string;
 }
 
+export interface DiscardOutcomeView {
+  readonly cardId: string;
+  /** Minimum deadwood remaining after this card is discarded. */
+  readonly deadwoodValue: number;
+  readonly declaration: "KNOCK" | "GIN" | null;
+}
+
 export interface PublicMeld {
   readonly kind: "RUN" | "SET";
   readonly cards: readonly PublicCard[];
@@ -82,6 +89,8 @@ export interface PlayerGameView {
   readonly turnRestrictions?: TurnRestrictions;
   /** The stock card received on the viewer's current discard decision. */
   readonly drawnStockCardId?: string;
+  /** Active-player-only, server-derived outcomes for each legal discard candidate. */
+  readonly discardOutcomes?: readonly DiscardOutcomeView[];
   readonly handResult?: HandResultView;
   readonly gameResult?: unknown;
   /** Rematch state is participant-safe metadata, never canonical game state. */
@@ -94,19 +103,21 @@ export interface PlayerGameView {
  * turn restriction in the browser.
  */
 export function selectedDiscardActionAvailability(
-  game: Pick<PlayerGameView, "legalControls" | "turnRestrictions">,
+  game: Pick<PlayerGameView, "legalControls" | "turnRestrictions" | "discardOutcomes">,
   selectedCardId?: string,
 ) {
   const hasControl = (control: LegalControl) => game.legalControls.includes(control);
   const isProhibitedDiscard = selectedCardId !== undefined
     && game.turnRestrictions?.cannotDiscardCardId === selectedCardId;
-  const canUseSelectedDiscard = selectedCardId !== undefined && !isProhibitedDiscard;
+  const outcome = game.discardOutcomes?.find((item) => item.cardId === selectedCardId);
+  const canUseSelectedDiscard = selectedCardId !== undefined && !isProhibitedDiscard && outcome !== undefined;
 
   return {
     isProhibitedDiscard,
     canDiscard: hasControl("DISCARD") && canUseSelectedDiscard,
-    canKnock: hasControl("KNOCK") && canUseSelectedDiscard,
-    canGin: hasControl("GIN") && canUseSelectedDiscard,
+    canKnock: hasControl("KNOCK") && canUseSelectedDiscard && outcome.declaration === "KNOCK",
+    canGin: hasControl("GIN") && canUseSelectedDiscard && outcome.declaration === "GIN",
+    deadwoodValue: outcome?.deadwoodValue,
   };
 }
 

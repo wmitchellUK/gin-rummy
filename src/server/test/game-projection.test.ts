@@ -3,7 +3,7 @@ import { applyAction, createWaitingGame, DEFAULT_GAME_RULES, standardDeck } from
 import type { GameState, PlayerId } from "@/src/game";
 import { gameplayControlsAreAvailable, selectedDiscardActionAvailability } from "@/src/shared/game-view";
 import { hand, P1, P2 } from "@/src/game/test/card-fixtures";
-import { drawState } from "@/src/game/test/state-fixtures";
+import { discardState, drawState } from "@/src/game/test/state-fixtures";
 import { parseActionRequest } from "../game-input";
 import { projectGameState } from "../game-projection";
 import { scoreDeclaration } from "@/src/game/scoring";
@@ -106,9 +106,28 @@ describe("browser game projection", () => {
 
     const view = projectGameState(drawn.nextState, P1, players);
     expect(view.turnRestrictions).toEqual({ cannotDiscardCardId: "K:DIAMONDS" });
+    expect(view.discardOutcomes?.some((outcome) => outcome.cardId === "K:DIAMONDS")).toBe(false);
     expect(projectGameState(drawn.nextState, P2, players).turnRestrictions).toBeUndefined();
+    expect(projectGameState(drawn.nextState, P2, players).discardOutcomes).toBeUndefined();
     // A re-fetch projects from canonical state again, rather than local draw memory.
     expect(projectGameState(drawn.nextState, P1, players).turnRestrictions).toEqual(view.turnRestrictions);
+  });
+
+  it("projects card-specific discard, knock, and gin outcomes only to the active player", () => {
+    const state = discardState(
+      hand("A♥ 2♥ 3♥ 4♣ 5♣ 6♣ 10♦ J♦ Q♦ K♦ 9♠"),
+      hand("A♣ 2♣ 3♣ 7♥ 8♥ 9♥ Q♠ Q♥ Q♣ 5♦"),
+    );
+    const players = [{ userId: P1, seat: 0 as const, displayName: "Ada" }, { userId: P2, seat: 1 as const, displayName: "Bea" }];
+
+    const active = projectGameState(state, P1, players);
+    expect(active.discardOutcomes).toHaveLength(11);
+    expect(active.discardOutcomes).toEqual(expect.arrayContaining([
+      { cardId: "9:SPADES", deadwoodValue: 0, declaration: "GIN" },
+      { cardId: "K:DIAMONDS", deadwoodValue: 9, declaration: "KNOCK" },
+      { cardId: "A:HEARTS", deadwoodValue: 14, declaration: null },
+    ]));
+    expect(projectGameState(state, P2, players).discardOutcomes).toBeUndefined();
   });
 
   it("projects a stock-drawn card only for its owner's discard decision", () => {
@@ -135,13 +154,24 @@ describe("browser game projection", () => {
     const game = {
       legalControls: ["DISCARD", "KNOCK", "GIN"] as const,
       turnRestrictions: { cannotDiscardCardId: "K:DIAMONDS" },
+      discardOutcomes: [
+        { cardId: "6:CLUBS", deadwoodValue: 7, declaration: "KNOCK" as const },
+        { cardId: "7:CLUBS", deadwoodValue: 0, declaration: "GIN" as const },
+        { cardId: "8:CLUBS", deadwoodValue: 18, declaration: null },
+      ],
     };
 
     expect(selectedDiscardActionAvailability(game, "K:DIAMONDS")).toEqual({
-      isProhibitedDiscard: true, canDiscard: false, canKnock: false, canGin: false,
+      isProhibitedDiscard: true, canDiscard: false, canKnock: false, canGin: false, deadwoodValue: undefined,
     });
     expect(selectedDiscardActionAvailability(game, "6:CLUBS")).toEqual({
-      isProhibitedDiscard: false, canDiscard: true, canKnock: true, canGin: true,
+      isProhibitedDiscard: false, canDiscard: true, canKnock: true, canGin: false, deadwoodValue: 7,
+    });
+    expect(selectedDiscardActionAvailability(game, "7:CLUBS")).toEqual({
+      isProhibitedDiscard: false, canDiscard: true, canKnock: false, canGin: true, deadwoodValue: 0,
+    });
+    expect(selectedDiscardActionAvailability(game, "8:CLUBS")).toEqual({
+      isProhibitedDiscard: false, canDiscard: true, canKnock: false, canGin: false, deadwoodValue: 18,
     });
   });
 });

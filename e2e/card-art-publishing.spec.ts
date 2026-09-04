@@ -86,7 +86,7 @@ async function exposeFaceCardOnDiscard(playerA: Page, playerB: Page) {
     await expect(drawnCard).toBeVisible();
     const label = await drawnCard.getAttribute("aria-label");
     await drawnCard.click();
-    await draw.page.getByRole("button", { name: "Discard", exact: true }).click();
+    await draw.page.getByRole("button", { name: /^Discard / }).click();
     if (/^[JQK] of /.test(label ?? "")) return;
   }
   throw new Error("A face card was not exposed within the deterministic draw bound.");

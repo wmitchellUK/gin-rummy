@@ -6,9 +6,9 @@ The game table should feel like a quiet, premium physical Gin Rummy table, not a
 
 ## Visual reference analysis
 
-`docs/assets/art-direction.png` is successful because its desktop composition gives every object a natural place at a card table: the opponent and their concealed hand sit across the felt, the two piles form a calm central focal point, and the large, face-up player hand is anchored at the near edge. The low curved wood rail subtly frames that hand rather than competing with it. Information is sparse and grouped by decision: score/identity at each player, piles together, a compact turn prompt beside them, and actions close to the active hand.
+`docs/assets/gin-ui-reference.png` is successful because its desktop composition gives every object a natural place at a card table: the opponent and their concealed hand sit across the felt, the two piles form a calm central focal point, and the large, face-up player hand is anchored at the near edge. The low curved wood rail subtly frames that hand rather than competing with it. Information is sparse and grouped by decision: score/identity at each player, piles together, a compact turn prompt beside them, and actions close to the active hand.
 
-The dark, lightly textured green felt gives depth without visual noise. Warm almost-black wood surrounds it, while thin muted-gold rules, type, and borders provide hierarchy; gold is an accent, not a fill color. Cream cards, narrow dark outlines, generous proportions, and high-contrast black/red pips make the cards feel tactile and readable. The opponent’s card backs are evenly overlapped; the player’s hand is a shallow fan with readable rank corners. The small score panel and green-dot turn prompt are compact, text-led status treatments. Buttons are rectangular, weighty, and material-like, with green as the primary action and warm brown as the discard action; unavailable buttons stay visible but subdued.
+The dark, lightly textured green felt gives depth without visual noise. Warm almost-black wood surrounds it, while thin muted-gold rules, type, and borders provide hierarchy; gold is an accent, not a fill color. Cream cards, narrow dark outlines, generous proportions, and high-contrast black/red pips make the cards feel tactile and readable. The opponent’s card backs are evenly overlapped; the player’s hand is a shallow fan with readable rank corners. The small score panel and green-dot turn prompt are compact, text-led status treatments. Buttons are rectangular, weighty, and material-like, with green as the primary action and warm brown as the discard action; the action area shows only choices relevant to the current phase and selection.
 
 The supplied end-of-hand example succeeds as a focused overlay: it freezes the table behind a dark surface, names the outcome, then explains the two players’ score calculation before asking for the next commitment. Its mobile view preserves the same hierarchy by stacking opponent, piles, status, player hand, and actions—not by shrinking desktop wholesale. Preserve these relationships and materials, but use real text/status, accessible controls, and responsive sizing instead of relying on ornament or color alone.
 
@@ -51,8 +51,8 @@ Use CSS custom properties/Tailwind theme equivalents. Texture, if used, must be 
 | Opponent | identity at upper left; 10–11 hidden cards centered across top; score card at upper right | identity and score on one row; compact hidden fan to its right or immediately below |
 | Public piles | stock and discard centered, side by side; prompt adjacent | centered pair below opponent; count/labels below each pile |
 | Turn/status | compact panel near piles/actions | full-width compact panel below piles |
-| Player | identity at lower left; 10–11 face-up cards span the near edge; deadwood/sort in rail below | identity/score above hand; shallow fan/overlap within full width; deadwood and sort below |
-| Actions | 2×2 group beside player hand: draw stock, take discard, knock, gin | two draw buttons, then knock/gin, full width in a 2-column grid; no hover-only information |
+| Player | identity at lower left; 10–11 face-up cards span the near edge; compact sort beside card count | identity/score above hand; enlarged shallow fan/overlap within full width; compact sort beside card count |
+| Actions | one or two contextual controls beside the player hand | sticky 60–70px bottom bar with one or two contextual controls and safe-area padding |
 
 The player hand owns the largest clear area. Keep cards in rank order or the user’s explicit order; overlap only enough to fit while leaving the upper-left rank and suit of every card visible. At 375px, distribute a 10-card hand across the available width with hand-size-aware overlap and a modest fan (maximum 7 degrees across the whole hand), not tiny cards. An 11th card may overlap more but remains individually selectable. A selected or keyboard-focused card lifts above its neighbors so its complete face and selection outline are visible. Do not use horizontal scrolling for a normal hand. Reflow before reducing card size.
 
@@ -64,14 +64,14 @@ Desktop may use `position: relative` for the table composition, but interactive 
 | --- | --- |
 | `GameTable` | Hosts the authoritative projected state, responsive table layout, connection status, and modal layer. Announces phase/turn changes; does not infer legality client-side. |
 | `OpponentArea` | Shows display name, dealer/current-turn text, match score, connection marker, and hidden-card count. Render card backs only—never identities—until a result legitimately reveals them. |
-| `PlayerArea` | Shows “You”, match score, dealer/current-turn label, `CardHand`, deadwood estimate supplied by the server, and sort. It is visually dominant. |
+| `PlayerArea` | Shows “You”, match score, dealer/current-turn label, `CardHand`, and a compact icon-only sort control. It is visually dominant. |
 | `Card` | Semantic button when selectable; otherwise an article/image-equivalent with accessible rank/suit name. Face uses cream, black/red pips, corner indices, and a high-contrast back. Selected cards lift 8px and receive gold outline; forbidden cards state why in text/accessible description. |
 | `CardHand` | Maintains server-provided order plus optional local, non-authoritative display order. Supports selectable cards, shallow fan, keyboard navigation, and reorder. Do not imply meld membership as fact unless server supplies it. |
 | `StockPile` | Face-down stack, remaining count, and “Draw stock” control. It is enabled only when the current projection permits the action. |
 | `DiscardPile` | Top public card, label, and “Take discard” control. The card itself may activate the same action. |
 | `TurnPrompt` | Plain-language current phase: “Your turn — draw a card”, “Choose a card to discard”, “James is choosing a card”, or opening-pass instruction. Pair colored dot with text and `aria-live` announcement. |
 | `ScoreBadge` | Compact per-player match score; optional hand number and target in an adjacent score panel. Use numerals plus labels, never gold/position alone. |
-| `GameActions` | Contextual action group: draw source, pass during opening, discard confirmation, knock, gin, sort, and cancel selection. Legal actions are enabled; illegal Knock/Gin remain visible, disabled, and explain the prerequisite (for example, “Draw and discard first” or “Deadwood must be 10 or less”). |
+| `GameActions` | Contextual action group: opening pass/take, legal draw sources, selection guidance, discard confirmation, and an eligible knock or gin declaration. It preserves its controls in a disabled busy state but does not reserve space for actions irrelevant to the current phase. |
 | `WaitingRoom` | Replaces play with invite URL, code, Copy controls, `aria-live` waiting status, and safe refresh reassurance. It never displays a deck or hand. |
 | `HandResult` | Modal/drawer that freezes gameplay. Shows declaration/cancelled-hand outcome, both optimized melds, original and final deadwood, valid layoffs, score formula, updated totals, and each player’s acknowledgement. A cancelled hand explicitly says cards were not revealed and no points were awarded. |
 | `GameResult` | Final modal with winner, final scores, completed-hand summary, and rematch request/accept/decline state. No game-play controls remain active. |
@@ -87,8 +87,8 @@ All user actions send an intent with the current version and idempotency key. Th
 | Draw stock | Enable stock only on a legal draw. On acceptance, add the new card to the player hand and switch prompt to discard; do not reveal stock order or animate a visible face from the pile. |
 | Take discard | Make the visible top discard and its labeled control activate the intent. On acceptance, move that known card into the player hand, mark it “cannot discard this turn,” and request a discard. |
 | Select / discard | In discard phase, card selection lifts and gets a gold outline; show a clear `Discard [rank and suit]` confirmation rather than discarding on first tap. Disable the just-taken discard and describe the restriction. After acceptance, move only the chosen card to the public pile. |
-| Reorder / sort | `Sort` applies a predictable local visual order (rank then suit by default) without sending a game action. Provide keyboard reorder controls and a “Custom order” state; never claim it changes scoring. |
-| Knock / gin | Keep both controls in the action group at all times. Enable only when the server projection says the selected discard/declaration is legal; disabled controls explain why. Confirmation names the discarded card and consequence: knock reveals hands/permits layoff; gin ends with no layoff. |
+| Reorder / sort | The labeled sort icon applies a predictable local visual order (rank then suit by default) without sending a game action. Preserve keyboard reorder instructions for assistive technology; never claim sorting changes scoring. |
+| Knock / gin | After card selection, show Knock with the server-projected post-discard deadwood count or Gin only when that declaration is legal for the selected discard. Keep ordinary discard available so the player may decline to declare. |
 | Opponent action | Retain the player’s view and show a concise status (“James drew from stock”, “James is choosing a discard”, “Your turn”). Do not animate or expose an opponent stock-drawn card. |
 | Hand reveal / scoring | On server transition to hand complete, disable table controls, then open `HandResult`. Reveal cards only in the scored hand result and label melds, layoffs, deadwood, calculation, and updated score. |
 | Next hand | Each participant uses `Start next hand` / `Ready for next hand`. Show “Waiting for James” after local acknowledgement; deal only after both acknowledge. |
@@ -107,3 +107,23 @@ All user actions send an intent with the current version and idempotency key. Th
 ## Implementation guardrails
 
 Render only the player-safe server projection: own cards, public discard, public counts/scores, and cards revealed by a completed hand. Treat local selection, pending state, sort order, and animation as presentation only. Realtime may prompt a refetch, but the fetched canonical projection determines every visible card, phase, score, and enabled action.
+
+## Card Studio
+
+`/card-studio` is a public prototype work surface, linked quietly from the lobby header. It extends the table's dark green felt, warm wood, restrained gold, cream card stock, and serif branding without adopting generic dashboard chrome. The set list and built-in entry establish the global source; the selected set keeps its status, draft version, published revision, rename/archive controls, and 3×4 J/Q/K-by-suit grid visible together.
+
+Draft and published states must be unmistakable in text. Label Active, Draft, and Archived status directly; show the returned draft version and published revision; and state whether unpublished changes exist. Disable operations that conflict with an in-flight request. A failed request leaves the current draft and input intact and places a stable, human-readable error beside the affected create, rename, archive, slot, or activation control.
+
+Activating a custom set or restoring the built-in design requires a modal confirmation stating that all open games and every future game will update. The active set's archive control stays disabled and explains why. Archived sets are read-only and cannot be activated.
+
+### Portrait treatment and cropping
+
+Custom artwork replaces only the central court illustration for J, Q, and K. Rank, suit, red/black treatment, cream stock, both corner indices, selection/turn markers, and accessible card names remain code-rendered. The enlarged portrait window keeps its restrained ornamental gold frame but has no fill or tone layer, so transparent portrait cutouts reveal the cream card stock directly. Opaque JPEG, PNG, and WebP artwork remains supported beneath the same frame. Missing slots and failed image loads expose the built-in court design; image alternative text is empty because the card control supplies the complete accessible name.
+
+The upload dialog is keyboard-operable, traps focus, returns focus on close, and labels its controls. `react-easy-crop` is locked to 2:3 with panning, zoom from 1–3, reset, cancel, preview, and upload actions. The confirmed crop is sent to the server, which owns decoding, orientation, cropping, resizing, encoding, and input validation.
+
+### Responsive and live behavior
+
+At desktop widths the set list sits beside the editing surface. It stacks above the editor on smaller layouts, while the twelve slots retain a compact four-suit grid at 375px. Reflow controls before shrinking text, preserve 44×44px targets, visible focus, logical dialog focus, keyboard-only operation, 200% zoom support, and immediate state changes under reduced motion.
+
+Game pages fetch the active presentation manifest on mount and every five seconds while the document is visible. Polling pauses while hidden and refreshes immediately when visibility returns. A new published revision changes portrait cache keys. Out-of-order responses are ignored; transient network failures preserve the last successful manifest, while missing or broken artwork always falls back to the built-in court card. Completed-hand and match reveals use the same renderer only for cards the player-safe projection already permits the viewer to see.

@@ -6,9 +6,11 @@ Gin Rummy is a polished, private, two-player web game that makes it easy to star
 
 The server is authoritative for every game action and score. A player may play as a guest, choose a display name, and optionally use an account to retain their game history across devices.
 
+The public Card Studio is a prototype presentation tool. It lets any visitor prepare and globally activate custom portraits for the twelve jack, queen, and king suit combinations. Artwork changes how face cards are drawn only; it never changes a card's rank, suit, value, legality, game state, or player-safe projection.
+
 ## Non-goals
 
-V1 does not include AI opponents, public matchmaking, tournaments, payments, chat, a friends system, avatar marketplace, or leaderboards.
+V1 does not include AI opponents, public matchmaking, tournaments, payments, chat, a friends system, avatar marketplace, or leaderboards. Card Studio does not include asset garbage collection, moderation, rate limiting, AI generation, background removal, rotation controls, per-game artwork pinning, or administrator accounts. Authentication and role checks are a deliberate extension point after the public prototype.
 
 ## User journey
 
@@ -26,6 +28,7 @@ V1 does not include AI opponents, public matchmaking, tournaments, payments, cha
 | `/` | Landing | Enter or change display name; create a private game; join with invite code; link to recent games. |
 | `/game/[gameId]` | Game table | Resolve the invite, show waiting, play, reconnect, hand-result, game-result, and rematch states as appropriate. The full URL is the shareable invite URL. |
 | `/history` | History | Show the current identity's recent in-progress and completed games, newest first; open a selected game. |
+| `/card-studio` | Public Card Studio prototype | Create, rename, edit, archive, and globally activate face-card sets; restore the built-in design. No sign-in is required during the prototype. |
 
 The invite code is short, human-enterable, unique among joinable games, and maps to the same private game as its URL. A game accepts exactly two players. Joining a full game is rejected without exposing either player's cards or private state.
 
@@ -87,6 +90,17 @@ V1 uses standard two-player Gin Rummy with the following explicit choices. Rule 
 - Support multiple hands until match completion. Record enough hand detail to render results and recent-game summaries accurately.
 - Copying the URL/code works without requiring the creator to remain connected. The URL and code remain usable until the second player joins or the game is no longer joinable.
 
+## Card Studio prototype
+
+- Anyone may create, rename, edit, archive, or globally activate artwork during the prototype. Set names are trimmed to 1–80 characters and need not be unique.
+- A set has an independently versioned draft and an immutable published snapshot. Uploading, replacing, or removing a slot changes only the draft. Activation atomically publishes the current draft, increments the published revision, and selects that revision globally.
+- Draft mutations return the new `draftVersion`, and activation returns the new published revision and active manifest. Clients must use those returned values for every subsequent mutation rather than predicting a version locally.
+- The built-in court-card design is a first-class global choice. The active custom set cannot be archived; archived sets cannot be edited or activated.
+- Open and future games use the current global published set. Visible game pages check for a new manifest approximately every five seconds; the selected set is not copied into canonical game state.
+- Missing slots, failed manifest requests before an initial load, and failed portrait image loads render the built-in court-card design. After a successful manifest load, a transient polling failure preserves the last successful presentation until a later refresh succeeds.
+- Original uploads are never stored. The server accepts JPEG, PNG, or WebP input up to 10 MB, applies the confirmed 2:3 crop after orientation, preserves transparency when present, and stores only a metadata-free 600×900 WebP result.
+- Processed assets use randomized immutable object paths. Current and superseded processed assets remain publicly readable when their URL is known so already-published revisions remain renderable.
+
 ## Reconnect behavior
 
 - A refresh, browser restart, or transient network loss returns a recognized device/account to its existing seat and current canonical game state.
@@ -119,3 +133,5 @@ V1 uses standard two-player Gin Rummy with the following explicit choices. Rule 
 - A completed game supports a mutually accepted rematch that is recorded as a new match.
 - Guests can view recent games on the same device; authenticated players can view their recent games after signing in elsewhere.
 - The primary game flow is keyboard-accessible, has meaningful status/error announcements, and meets the accessibility expectations above.
+- A visitor can create and edit a Card Studio set, confirm global activation, and see the same published face-card portrait in open games without exposing an opponent's hidden cards.
+- Restoring the built-in design updates visible open games within approximately five seconds. Missing artwork falls back to the built-in court-card design.

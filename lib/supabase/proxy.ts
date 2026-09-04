@@ -51,7 +51,7 @@ export async function updateSession(request: NextRequest) {
   // Guests establish their identity through the session endpoint. Game pages must
   // also load before that call; each API handler performs its own auth/membership
   // authorization rather than trusting this navigation convenience layer.
-  const publicPath = pathname === "/" || pathname.startsWith("/api/") || pathname.startsWith("/game/") || pathname.startsWith("/join/") || pathname.startsWith("/settings")
+  const publicPath = pathname === "/" || pathname.startsWith("/api/") || pathname.startsWith("/game/") || pathname.startsWith("/join/") || pathname.startsWith("/settings") || pathname.startsWith("/card-studio")
     || pathname.startsWith("/login") || pathname.startsWith("/auth");
   if (!publicPath && !user) {
     // no user, potentially respond by redirecting the user to the login page
