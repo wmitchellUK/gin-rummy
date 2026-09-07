@@ -68,11 +68,12 @@ describe("contiguous meld feedback", () => {
 });
 
 describe("CardHand interactions", () => {
-  function renderHand(options: { canDiscard?: boolean; canReorder?: boolean } = {}) {
+  function renderHand(options: { canDiscard?: boolean; canReorder?: boolean; displayCards?: readonly PublicCard[] } = {}) {
     const onMove = vi.fn();
     const onSelect = vi.fn();
+    const displayCards = options.displayCards ?? cards.slice(0, 3);
     const result = render(<CardHand
-      cards={cards.slice(0, 3)}
+      cards={displayCards}
       meldCandidates={[meld("RUN", cards.slice(0, 3))]}
       canDiscard={options.canDiscard ?? false}
       canReorder={options.canReorder ?? true}
@@ -82,19 +83,22 @@ describe("CardHand interactions", () => {
     return { ...result, onMove, onSelect };
   }
 
-  it("announces meld membership and supports Shift+Arrow reordering", async () => {
+  it("announces exact meld membership and supports off-turn Shift+Arrow reordering", async () => {
     const { container, onMove } = renderHand();
     const first = screen.getByRole("button", { name: /6 of diamonds, position 1 of 3, part of run/i });
     expect(screen.getByText("Run")).toBeInTheDocument();
-    expect(container.querySelectorAll(".meld-group-outline.meld-run")).toHaveLength(1);
+    expect(container.querySelectorAll(".meld-group-marker.meld-run")).toHaveLength(1);
+    expect(container.querySelectorAll(".playing-card.meld-card")).toHaveLength(3);
+    expect(container.querySelector(".meld-group-outline")).not.toBeInTheDocument();
+    expect(first).toBeEnabled();
     first.focus();
     await userEvent.setup().keyboard("{Shift>}{ArrowRight}{/Shift}");
     expect(onMove).toHaveBeenCalledWith(cards[0]!.id, 1);
     expect(screen.getByText(/moved to position 2 of 3/i)).toBeInTheDocument();
   });
 
-  it("draws one connected frame around the full meld span", () => {
-    const { container } = renderHand();
+  it("bounds the subtle group rail within meld member centers", () => {
+    const { container } = renderHand({ displayCards: cards.slice(0, 4) });
     const hand = container.querySelector<HTMLElement>(".card-hand")!;
     const slots = Array.from(container.querySelectorAll<HTMLElement>("[data-hand-slot]"));
     vi.spyOn(hand, "getBoundingClientRect").mockReturnValue({
@@ -105,11 +109,14 @@ describe("CardHand interactions", () => {
       x: 20 + index * 60, y: 40, toJSON: () => ({}),
     }));
     fireEvent(window, new Event("resize"));
-    const outline = container.querySelector<HTMLElement>(".meld-group-outline")!;
-    expect(outline.style.left).toBe("7px");
-    expect(outline.style.top).toBe("17px");
-    expect(outline.style.width).toBe("176px");
-    expect(outline.style.height).toBe("106px");
+    const marker = container.querySelector<HTMLElement>(".meld-group-marker")!;
+    expect(marker.style.left).toBe("35px");
+    expect(marker.style.top).toBe("17px");
+    expect(marker.style.width).toBe("120px");
+    expect(marker.style.height).toBe("106px");
+    const markerRight = Number.parseFloat(marker.style.left) + Number.parseFloat(marker.style.width);
+    const nextCardLeft = slots[3]!.getBoundingClientRect().left - hand.getBoundingClientRect().left;
+    expect(markerRight).toBeLessThan(nextCardLeft);
   });
 
   it("keeps tap selection phase-gated", async () => {
@@ -142,5 +149,13 @@ describe("CardHand interactions", () => {
     fireEvent.click(first);
     expect(onMove).toHaveBeenCalledWith(cards[0]!.id, 2);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("blocks native browser dragging without blocking card clicks", async () => {
+    const { onSelect } = renderHand({ canDiscard: true, canReorder: true });
+    const first = screen.getByRole("button", { name: /6 of diamonds/i });
+    expect(fireEvent.dragStart(first)).toBe(false);
+    await userEvent.setup().click(first);
+    expect(onSelect).toHaveBeenCalledWith(cards[0]!.id);
   });
 });

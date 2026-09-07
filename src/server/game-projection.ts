@@ -66,6 +66,10 @@ function projectHandResult(result: HandResult, snapshots: readonly PlayerSnapsho
 
 function projectGameResult(result: GameResult, snapshots: readonly PlayerSnapshot[]): GameResultView {
   const nameFor = (playerId: string) => snapshots.find((snapshot) => snapshot.playerId === playerId)?.displayName ?? "Player";
+  const decidingHand = result.completedHands.at(-1);
+  if (!decidingHand || decidingHand.kind !== "SCORED") throw new Error("A completed game must end with a scored hand.");
+  const finalHand = projectHandResult(decidingHand, snapshots);
+  if (finalHand.kind !== "SCORED") throw new Error("A completed game must project a scored final hand.");
   const finalScores = Object.entries(result.finalScores).map(([playerId, score]): HandScoreView => ({
     playerId,
     displayName: nameFor(playerId),
@@ -90,6 +94,7 @@ function projectGameResult(result: GameResult, snapshots: readonly PlayerSnapsho
     finalScores: pair(finalScores),
     matchTarget: result.matchTarget,
     completedHands,
+    finalHand,
   };
 }
 

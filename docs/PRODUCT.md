@@ -43,7 +43,7 @@ The invite code is short, human-enterable, unique among joinable games, and maps
 | Naia playing | Show Naia as a computer opponent and advance one server-controlled action after a brief thinking beat. Refresh safely resumes any pending Naia action. |
 | Disconnected opponent | Keep the game state intact, show a clear reconnecting/offline status, and disable actions that require the absent player. Resume when the opponent reconnects. |
 | Hand result | Freeze play and show declaration, melds, deadwood, layoff result where applicable, points awarded, and updated match score. Each player selects Start next hand; the server deals only when both have acknowledged the result. |
-| Game result | Show winner, final score, completed-hand summary, and rematch controls. No further game actions are accepted. |
+| Game result | Show winner, final score, the complete deciding-hand reveal, completed-hand summary, and rematch controls. No further game actions are accepted. |
 | Rematch | A player can request a rematch; when the other accepts, create and open a new private match for the same pair. A declined or unanswered request leaves the completed game unchanged. |
 | History | Show enough information to identify each recent game: opponent name, status/result, score, and last activity. |
 

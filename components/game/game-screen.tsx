@@ -180,8 +180,8 @@ function GameScreenContent({ gameId }: { gameId: string }) {
         </div><TurnPrompt game={game} active={youAreActive} selected={selected} selectedActions={selectedActions} />
       </section>
       <section className="player-area" aria-labelledby="your-hand">
-        <div className="player-hand-heading"><div className="player-identity"><div className="avatar you-avatar" aria-hidden="true">{initials(game.you.displayName)}</div><div className="identity-copy"><p className="eyebrow">You {youAreActive ? "· Your turn" : "· At the table"}</p><div className="identity-line"><h2 id="your-hand">{game.you.displayName}</h2><span className="identity-score"><span>Score</span>{game.you.score}</span></div></div></div><div className="hand-tools"><span>{game.you.hand.length} cards</span><small>{youAreActive ? "Drag to organize" : "Order saved"}</small></div></div>
-        <CardHand cards={orderedHand} meldCandidates={game.you.meldCandidates ?? []} selectedCardId={selectedCardId} canDiscard={can("DISCARD")} canReorder={isPlaying && youAreActive && !busy} restrictedId={game.turnRestrictions?.cannotDiscardCardId} drawnId={game.drawnStockCardId} onSelect={setSelectedCardId} onMove={moveCard} />
+        <div className="player-hand-heading"><div className="player-identity"><div className="avatar you-avatar" aria-hidden="true">{initials(game.you.displayName)}</div><div className="identity-copy"><p className="eyebrow">You {youAreActive ? "· Your turn" : "· At the table"}</p><div className="identity-line"><h2 id="your-hand">{game.you.displayName}</h2><span className="identity-score"><span>Score</span>{game.you.score}</span></div></div></div><div className="hand-tools"><span>{game.you.hand.length} cards</span><small>{busy ? "Order saved" : "Drag to organize"}</small></div></div>
+        <CardHand cards={orderedHand} meldCandidates={game.you.meldCandidates ?? []} selectedCardId={selectedCardId} canDiscard={can("DISCARD")} canReorder={isPlaying && !busy} restrictedId={game.turnRestrictions?.cannotDiscardCardId} drawnId={game.drawnStockCardId} onSelect={setSelectedCardId} onMove={moveCard} />
       </section>
       {error && <p role="alert" className="game-error">{error}</p>}
       <ContextualGameActions legalControls={game.legalControls} busy={busy} discard={discard} selected={selected} selectedActions={selectedActions} onAction={action} />
@@ -209,11 +209,8 @@ export function HandCompleteResult({ game, onStartNextHand, canStartNextHand }: 
     <MatchScores scores={result.scoresAfter} />
     {footer}
   </ResultOverlay>;
-  const declarer = result.players.find((player) => player.playerId === result.declarerId)!;
-  const opponent = result.players.find((player) => player.playerId !== result.declarerId)!;
   return <ResultOverlay title="Hand over" kicker={`${result.declarerName} ${result.declaration === "KNOCK" ? "knocked" : "went gin"}`}>
-    <div className="result-score"><strong>{result.winnerName} wins the hand</strong><span>+{result.pointsAwarded}</span><small>{scoreFormula(result, declarer, opponent, game)}</small></div>
-    <div className="revealed-hands">{result.players.map((player) => <RevealedHand key={player.playerId} player={player} />)}</div>
+    <ScoredHandBreakdown result={result} game={game} />
     <MatchScores scores={result.scoresAfter} />
     {footer}
   </ResultOverlay>;
@@ -222,8 +219,13 @@ export function GameResult({ game, busy, onRematch }: { game: PlayerGameView; bu
   const result = game.gameResult;
   if (!result) return null;
   return <ResultOverlay title="Match complete" kicker="A fine game">
+    <VictoryCrest />
     <div className="match-winner"><span>Winner</span><strong>{result.winnerName}</strong><small>First to {result.matchTarget}</small></div>
     <MatchScores scores={result.finalScores} />
+    <section className="final-hand-summary" aria-labelledby="final-hand-title">
+      <div className="final-hand-heading"><p className="eyebrow">The deciding deal</p><h2 id="final-hand-title">Final hand · Hand {result.finalHand.handNumber}</h2></div>
+      <ScoredHandBreakdown result={result.finalHand} game={game} />
+    </section>
     <section className="hand-history" aria-labelledby="hand-history-title"><h2 id="hand-history-title">Hand history</h2>{result.completedHands.map((hand) => <div key={hand.handNumber}><span>Hand {hand.handNumber}</span><strong>{hand.kind === "CANCELLED" ? "No score" : `${hand.winnerName} +${hand.pointsAwarded}`}</strong><small>{hand.kind === "CANCELLED" ? "Stock exhausted" : hand.scoringReason === "GIN" ? "Gin" : hand.scoringReason === "UNDERCUT" ? "Undercut" : "Knock"}</small></div>)}</section>
     {game.mode === "SINGLE_PLAYER" ? <button className="action-button primary result-primary" onClick={() => void onRematch("PLAY_AGAIN")} disabled={busy}>Play Naia again</button> : <>
       {!game.rematch && <button className="action-button primary result-primary" onClick={() => void onRematch("REQUEST")} disabled={busy}>Request rematch</button>}
@@ -232,6 +234,26 @@ export function GameResult({ game, busy, onRematch }: { game: PlayerGameView; bu
     </>}
     <Link className="quiet-link" href="/">Return home</Link>
   </ResultOverlay>;
+}
+function VictoryCrest() {
+  return <div className="victory-crest" aria-hidden="true">
+    <svg viewBox="0 0 180 112" focusable="false">
+      <g className="victory-laurel">
+        <path d="M59 89C38 79 27 61 29 39" /><path d="M121 89c21-10 32-28 30-50" />
+        <path d="M43 71c-8 0-13-4-17-10 8-1 14 2 17 10Zm-8-15c-7-3-10-8-11-15 8 2 12 7 11 15Zm8 29c-8 2-14 0-20-5 7-4 14-2 20 5Zm94-14c8 0 13-4 17-10-8-1-14 2-17 10Zm8-15c7-3 10-8 11-15-8 2-12 7-11 15Zm-8 29c8 2 14 0 20-5-7-4-14-2-20 5Z" />
+      </g>
+      <g className="victory-cards">
+        <rect x="59" y="24" width="43" height="62" rx="5" transform="rotate(-10 80.5 55)" />
+        <rect x="78" y="21" width="43" height="62" rx="5" transform="rotate(10 99.5 52)" />
+        <path d="m75 35 4 4 4-4-4-4-4 4Zm27-1c4 4 8 0 5-4-3-3-7 1-5 4Zm0 0c-4 4-8 0-5-4 3-3 7 1 5 4Z" />
+      </g>
+      <path className="victory-ribbon" d="M54 83h72l-8 18-28-7-28 7-8-18Z" />
+      <text x="90" y="91">GIN</text>
+      <g className="victory-sparkles">
+        <path d="M43 27v10m-5-5h10" /><path d="M139 22v12m-6-6h12" /><path d="M125 11v7m-3.5-3.5h7" />
+      </g>
+    </svg>
+  </div>;
 }
 function ResultOverlay({ title, kicker, children }: { title: string; kicker: string; children: React.ReactNode }) {
   const titleId = useId();
@@ -262,6 +284,14 @@ function ResultOverlay({ title, kicker, children }: { title: string; kicker: str
     };
   }, []);
   return <section className="result-backdrop"><div ref={panel} className="result-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}><div className="result-handle" aria-hidden="true" /><p className="eyebrow">{kicker}</p><h1 ref={titleRef} id={titleId} tabIndex={-1}>{title}</h1>{children}</div></section>;
+}
+function ScoredHandBreakdown({ result, game }: { result: Extract<HandResultView, { kind: "SCORED" }>; game: PlayerGameView }) {
+  const declarer = result.players.find((player) => player.playerId === result.declarerId)!;
+  const opponent = result.players.find((player) => player.playerId !== result.declarerId)!;
+  return <>
+    <div className="result-score"><strong>{result.winnerName} wins the hand</strong><span>+{result.pointsAwarded}</span><small>{scoreFormula(result, declarer, opponent, game)}</small></div>
+    <div className="revealed-hands">{result.players.map((player) => <RevealedHand key={player.playerId} player={player} />)}</div>
+  </>;
 }
 function RevealedHand({ player }: { player: RevealedPlayerHandView }) { return <article className="revealed-hand"><h2>{player.displayName}</h2><ResultCards cards={player.revealedHand} /><dl className="hand-breakdown"><div><dt>Melds</dt><dd>{player.melds.length ? player.melds.map((meld, index) => <span className="result-meld" key={index}><Meld cards={meld.cards} kind={meld.kind} /></span>) : "None"}</dd></div><div><dt>Original deadwood</dt><dd><CardMarks cards={player.originalDeadwoodCards} empty="None" /> <b>{player.originalDeadwoodValue} pts</b></dd></div>{player.layoffs.length > 0 && <div><dt>Layoffs</dt><dd>{player.layoffs.map((layoff) => <span className="result-layoff" key={layoff.card.id}><CardMark card={layoff.card} /> onto <Meld cards={layoff.resultingMeld.cards} kind={layoff.resultingMeld.kind} /></span>)}</dd></div>}<div><dt>Final deadwood</dt><dd><CardMarks cards={player.finalDeadwoodCards} empty="None" /> <b>{player.finalDeadwoodValue} pts</b></dd></div></dl></article>; }
 function ResultCards({ cards }: { cards: readonly PublicCard[] }) { return <div className="result-cards">{cards.map((card) => <span className="mini-card" role="img" aria-label={cardLabel(card)} key={card.id}><CardFace card={card} /></span>)}</div>; }

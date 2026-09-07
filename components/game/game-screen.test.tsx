@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PlayerGameView, PublicCard, RevealedPlayerHandView } from "@/src/shared/game-view";
+import type { PlayerGameView, PublicCard, RevealedPlayerHandView, ScoredHandResultView } from "@/src/shared/game-view";
 import { actionMessage, GameResult, HandCompleteResult, newestGameView } from "./game-screen";
 
 const card = (id: string, rank: string, suit: string): PublicCard => ({ id, rank, suit });
@@ -37,6 +37,22 @@ function baseGame(): PlayerGameView {
   };
 }
 
+function finalHand(opponentName = "Kim", handNumber = 3): ScoredHandResultView {
+  return {
+    kind: "SCORED",
+    handNumber,
+    declaration: "KNOCK",
+    declarerId: "p1",
+    declarerName: "Will",
+    winnerId: "p1",
+    winnerName: "Will",
+    scoringReason: "KNOCK",
+    pointsAwarded: 9,
+    players: [player("p1", "Will", 9), player("p2", opponentName, 18)],
+    scoresAfter: [{ playerId: "p1", displayName: "Will", score: 105 }, { playerId: "p2", displayName: opponentName, score: 81 }],
+  };
+}
+
 afterEach(cleanup);
 
 describe("game result surfaces", () => {
@@ -69,7 +85,7 @@ describe("game result surfaces", () => {
     expect(screen.getByText("Background action")).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("renders a typed match winner and completed-hand history", () => {
+  it("renders the celebration, complete final hand, and completed-hand history together", () => {
     const game: PlayerGameView = {
       ...baseGame(),
       status: "COMPLETE",
@@ -83,14 +99,60 @@ describe("game result surfaces", () => {
         completedHands: [
           { kind: "SCORED", handNumber: 1, declaration: "GIN", winnerId: "p1", winnerName: "Will", scoringReason: "GIN", pointsAwarded: 34 },
           { kind: "CANCELLED", handNumber: 2, pointsAwarded: 0 },
+          { kind: "SCORED", handNumber: 3, declaration: "KNOCK", winnerId: "p1", winnerName: "Will", scoringReason: "KNOCK", pointsAwarded: 9 },
         ],
+        finalHand: finalHand(),
       },
     };
-    render(<GameResult game={game} busy={false} onRematch={vi.fn()} />);
+    const { container } = render(<GameResult game={game} busy={false} onRematch={vi.fn()} />);
     expect(screen.getByText("Will", { selector: ".match-winner strong" })).toBeInTheDocument();
     expect(screen.getByText("Will +34")).toBeInTheDocument();
     expect(screen.getByText("Stock exhausted")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Final hand · Hand 3" })).toBeInTheDocument();
+    expect(screen.getAllByText("Original deadwood")).toHaveLength(2);
+    expect(screen.getAllByText("Final deadwood")).toHaveLength(2);
+    expect(screen.getByText("18 − 9 = 9")).toBeInTheDocument();
+    expect(container.querySelector(".victory-crest")).toHaveAttribute("aria-hidden", "true");
     expect(screen.getByRole("button", { name: "Request rematch" })).toBeEnabled();
+  });
+
+  it("keeps gin and undercut score formulas in the shared final-hand breakdown", () => {
+    const ginHand: ScoredHandResultView = { ...finalHand(), declaration: "GIN", scoringReason: "GIN", pointsAwarded: 34 };
+    const gameFor = (hand: ScoredHandResultView): PlayerGameView => ({
+      ...baseGame(),
+      status: "COMPLETE",
+      phase: "GAME_COMPLETE",
+      legalControls: [],
+      gameResult: {
+        winnerId: hand.winnerId,
+        winnerName: hand.winnerName,
+        finalScores: hand.scoresAfter,
+        matchTarget: 100,
+        completedHands: [{
+          kind: "SCORED",
+          handNumber: hand.handNumber,
+          declaration: hand.declaration,
+          winnerId: hand.winnerId,
+          winnerName: hand.winnerName,
+          scoringReason: hand.scoringReason,
+          pointsAwarded: hand.pointsAwarded,
+        }],
+        finalHand: hand,
+      },
+    });
+    const { rerender } = render(<GameResult game={gameFor(ginHand)} busy={false} onRematch={vi.fn()} />);
+    expect(screen.getByText("9 + 25 = 34")).toBeInTheDocument();
+
+    const undercutHand: ScoredHandResultView = {
+      ...finalHand(),
+      winnerId: "p2",
+      winnerName: "Kim",
+      scoringReason: "UNDERCUT",
+      pointsAwarded: 34,
+      players: [player("p1", "Will", 9), player("p2", "Kim", 0)],
+    };
+    rerender(<GameResult game={gameFor(undercutHand)} busy={false} onRematch={vi.fn()} />);
+    expect(screen.getByText("9 − 0 + 25 = 34")).toBeInTheDocument();
   });
 
   it("offers an immediate replay against Naia instead of multiplayer negotiation", () => {
@@ -107,7 +169,8 @@ describe("game result surfaces", () => {
         winnerName: "Will",
         finalScores: [{ playerId: "p1", displayName: "Will", score: 100 }, { playerId: "p2", displayName: "Naia", score: 18 }],
         matchTarget: 100,
-        completedHands: [],
+        completedHands: [{ kind: "SCORED", handNumber: 1, declaration: "KNOCK", winnerId: "p1", winnerName: "Will", scoringReason: "KNOCK", pointsAwarded: 9 }],
+        finalHand: finalHand("Naia", 1),
       },
     };
     render(<GameResult game={game} busy={false} onRematch={onRematch} />);

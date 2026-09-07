@@ -438,7 +438,8 @@ against canonical state.
 After an engine-scored hand, it includes engine-permitted revealed hands, melds,
 deadwood, layoffs, declaration, score, and next-hand readiness. A cancelled result
 includes its reason and scores but neither hand. Game-complete data is projected to a
-typed, named score and completed-hand summary rather than returning canonical state.
+typed, named score, safe deciding-hand reveal, and completed-hand summary rather than
+returning canonical state.
 
 A projection never includes an opponent current hand, opponent private stock draw,
 future stock/deck order, deal plan, raw event, raw action, or canonical JSON.

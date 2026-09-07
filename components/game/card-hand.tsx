@@ -153,19 +153,21 @@ export function CardHand({
       const handBounds = hand.getBoundingClientRect();
       const slots = Array.from(hand.querySelectorAll<HTMLElement>("[data-hand-slot]"));
       groups.forEach((group, groupIndex) => {
-        const outline = hand.querySelector<HTMLElement>(`[data-meld-outline="${groupIndex}"]`);
+        const marker = hand.querySelector<HTMLElement>(`[data-meld-marker="${groupIndex}"]`);
         const memberBounds = slots
           .slice(group.start, group.end + 1)
           .map((slot) => slot.getBoundingClientRect());
-        if (!outline || memberBounds.length === 0) return;
-        const left = Math.min(...memberBounds.map((bounds) => bounds.left)) - handBounds.left;
+        if (!marker || memberBounds.length === 0) return;
+        const first = memberBounds[0]!;
+        const last = memberBounds.at(-1)!;
+        const firstCenter = (first.left + first.right) / 2;
+        const lastCenter = (last.left + last.right) / 2;
         const top = Math.min(...memberBounds.map((bounds) => bounds.top)) - handBounds.top;
-        const right = Math.max(...memberBounds.map((bounds) => bounds.right)) - handBounds.left;
         const bottom = Math.max(...memberBounds.map((bounds) => bounds.bottom)) - handBounds.top;
-        outline.style.left = `${left - 3}px`;
-        outline.style.top = `${top - 3}px`;
-        outline.style.width = `${right - left + 6}px`;
-        outline.style.height = `${bottom - top + 6}px`;
+        marker.style.left = `${firstCenter - handBounds.left}px`;
+        marker.style.top = `${top - 3}px`;
+        marker.style.width = `${lastCenter - firstCenter}px`;
+        marker.style.height = `${bottom - top + 6}px`;
       });
     };
 
@@ -245,16 +247,16 @@ export function CardHand({
 
   return <div
     ref={root}
-    className={`card-hand cards-${cards.length}`}
+    className={`card-hand cards-${cards.length}${canReorder ? " can-reorder" : ""}`}
     style={{ "--hand-count": cards.length } as CSSProperties}
     aria-label="Your hand"
   >
-    <span id="hand-keyboard-help" className="visually-hidden">Use the arrow keys to move between cards. During your turn, hold Shift with an arrow key to reorder. Escape clears a selected discard.</span>
+    <span id="hand-keyboard-help" className="visually-hidden">Use the arrow keys to move between cards. During play, hold Shift with an arrow key to reorder. Escape clears a selected discard.</span>
     <span className="visually-hidden" aria-live="polite">{announcement}</span>
     <span className="meld-group-layer" aria-hidden="true">
       {groups.map((group, index) => <span
-        data-meld-outline={index}
-        className={`meld-group-outline meld-${group.kind.toLowerCase()}`}
+        data-meld-marker={index}
+        className={`meld-group-marker meld-${group.kind.toLowerCase()}`}
         style={{ "--meld-label-lift": `${group.lane * 22}px` } as CSSProperties}
         key={group.key}
       >
@@ -280,12 +282,14 @@ export function CardHand({
           aria-label={`${cardLabel(card)}, position ${index + 1} of ${cards.length}${description}${marker ? `, ${marker.toLowerCase()}${marker === "Hold" ? ", cannot be discarded this turn" : ""}` : ""}`}
           aria-describedby="hand-keyboard-help"
           aria-pressed={canDiscard ? selected : undefined}
+          draggable={false}
           disabled={!canDiscard && !canReorder}
           onKeyDown={(event) => keyDown(event, card, index)}
           onPointerDown={(event) => pointerDown(event, card, index)}
           onPointerMove={pointerMove}
           onPointerUp={(event) => finishPointer(event, card)}
           onPointerCancel={(event) => finishPointer(event, card)}
+          onDragStart={(event) => event.preventDefault()}
           onClick={(event) => {
             if (suppressClick.current === card.id) { suppressClick.current = undefined; event.preventDefault(); return; }
             if (canDiscard) onSelect(selected ? undefined : card.id);

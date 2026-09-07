@@ -122,11 +122,24 @@ describe("browser game projection", () => {
         completedHands: [scored.result],
       },
     } as GameState;
-    expect(projectGameState(complete, P1, players).gameResult).toMatchObject({
+    const completedView = projectGameState(complete, P1, players).gameResult;
+    const opponentCompletedView = projectGameState(complete, P2, players).gameResult;
+    expect(completedView).toMatchObject({
       winnerName: "Ada",
       finalScores: [{ displayName: "Ada", score: 2 }, { displayName: "Bea", score: 46 }],
       completedHands: [{ kind: "SCORED", winnerName: "Ada", pointsAwarded: 2 }],
+      finalHand: {
+        kind: "SCORED",
+        winnerName: "Ada",
+        pointsAwarded: 2,
+        players: [{ displayName: "Ada" }, { displayName: "Bea" }],
+      },
     });
+    expect(completedView?.finalHand).toEqual(opponentCompletedView?.finalHand);
+    const completedPayload = JSON.stringify(completedView);
+    for (const card of complete.stock) expect(completedPayload).not.toContain(card.id);
+    expect(completedPayload).not.toContain("discardPile");
+    expect(completedPayload).not.toContain("stock");
   });
 
   it("projects a discard-pile draw restriction only to the active player", () => {

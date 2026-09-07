@@ -68,6 +68,8 @@ export interface GameResultView {
   readonly finalScores: readonly [HandScoreView, HandScoreView];
   readonly matchTarget: number;
   readonly completedHands: readonly CompletedHandSummaryView[];
+  /** The deciding scored hand, including only cards that are safe to reveal after completion. */
+  readonly finalHand: ScoredHandResultView;
 }
 
 export interface ScoredHandResultView {

@@ -102,6 +102,7 @@ test("two anonymous browsers create, join, synchronize an action, and recover af
 
   const handBeforeDrag = draw.page.locator(".card-hand [data-hand-card]");
   await expect(handBeforeDrag).toHaveCount(10);
+  expect(await handBeforeDrag.first().evaluate((element) => getComputedStyle(element).userSelect)).toBe("none");
   await expect(draw.page.locator(".sort-button")).toHaveCount(0);
   await expect(draw.page.locator(".opponent-area .meld-label")).toHaveCount(0);
   const firstCardName = (await handBeforeDrag.first().getAttribute("aria-label"))!.split(", position")[0]!;
@@ -134,6 +135,24 @@ test("two anonymous browsers create, join, synchronize an action, and recover af
 
   const other = draw.page === a ? b : a;
   await expect(other.getByRole("button", { name: /Draw stock/ })).toBeEnabled();
+  const inactiveHand = draw.page.locator(".card-hand [data-hand-card]");
+  await expect(inactiveHand).toHaveCount(10);
+  await expect(inactiveHand.first()).toBeEnabled();
+  const inactiveFirstName = (await inactiveHand.first().getAttribute("aria-label"))!.split(", position")[0]!;
+  const inactiveFirstId = (await inactiveHand.first().getAttribute("data-card-id"))!;
+  const inactiveFirstBox = await inactiveHand.first().boundingBox();
+  const inactiveLastBox = await inactiveHand.last().boundingBox();
+  if (!inactiveFirstBox || !inactiveLastBox) throw new Error("Inactive hand cards were not laid out for dragging.");
+  await draw.page.mouse.move(inactiveFirstBox.x + 6, inactiveFirstBox.y + 18);
+  await draw.page.mouse.down();
+  await draw.page.mouse.move(inactiveLastBox.x + inactiveLastBox.width / 2, inactiveLastBox.y + inactiveLastBox.height / 2, { steps: 8 });
+  await draw.page.mouse.up();
+  await expect(inactiveHand.last()).toHaveAttribute("aria-label", new RegExp(`^${inactiveFirstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}, position 10 of 10`));
+  await expect.poll(() => draw.page.evaluate(() => {
+    const gameId = location.pathname.split("/").at(-1);
+    return (JSON.parse(localStorage.getItem(`gin-rummy:hand-order:v1:${gameId}`) ?? "[]") as string[]).at(-1) ?? null;
+  })).toBe(inactiveFirstId);
+  expect(await draw.page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
   await other.reload();
   await expect(other.getByRole("heading", { name: other === a ? "Player A" : "Player B" })).toBeVisible();
   await expect(other.getByRole("button", { name: /Draw stock/ })).toBeEnabled();
