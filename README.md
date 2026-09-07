@@ -108,10 +108,15 @@ In Vercel Project Settings → Environment Variables, configure the values from
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=...
+LIVEKIT_API_SECRET=...
 ```
 
 Never commit `.env.local` or service-role keys. Redeploy after changing environment
-variables.
+variables. The three LiveKit values are optional: without them, game play remains
+available and call attempts return `MEDIA_NOT_CONFIGURED`. Treat the LiveKit API key
+and secret as server credentials; do not expose them through `NEXT_PUBLIC_` variables.
 
 ### Manual Vercel CLI deploy
 

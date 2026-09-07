@@ -42,6 +42,25 @@ Postgres
 The public Supabase URL and anonymous key may exist in browser code. The service-role
 key exists only in server modules and is never public.
 
+LiveKit is an optional, separate media plane for human multiplayer games. An
+authenticated player requests `POST /api/games/[gameId]/media-token`; the route verifies
+membership and the canonical game's mode/status, then signs a five-minute token for a
+server-derived room and participant identity. Tokens allow room join plus audio/video
+publish and subscribe, but not data publishing. `LIVEKIT_API_KEY` and
+`LIVEKIT_API_SECRET` remain server-only. A shared participant identity makes a later tab
+take over the call instead of producing duplicate audio.
+
+WebRTC media uses LiveKit's standard transport encryption and is never recorded,
+transcribed, screenshotted, or persisted by this application. Tracks do not enter
+Postgres, Supabase Realtime, canonical state, player projections, events, or the pure
+game engine. Realtime/polling remains the game synchronization path and LiveKit remains
+independent of game authority.
+
+The token endpoint uses stable safe errors: `UNAUTHENTICATED`,
+`MEDIA_MEMBERSHIP_REQUIRED`, `MEDIA_UNSUPPORTED_GAME`,
+`MEDIA_UNSUPPORTED_STATE`, and `MEDIA_NOT_CONFIGURED`. Success and error responses use
+`Cache-Control: no-store`; responses never include the LiveKit API key or secret.
+
 The Card Studio boundary is narrower: browser code calls same-origin `/api/card-art`
 routes and renders returned public asset URLs. Route handlers pass mutations through
 `requireCardArtEditor`, then server-only services use the privileged repository. The

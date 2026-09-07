@@ -8,9 +8,13 @@ The server is authoritative for every game action and score. A player may play a
 
 The public Card Studio is a prototype presentation tool. It lets any visitor prepare and globally activate custom portraits for the twelve jack, queen, and king suit combinations. Artwork changes how face cards are drawn only; it never changes a card's rank, suit, value, legality, game state, or player-safe projection.
 
+Human private games optionally offer a one-to-one LiveKit voice/video call. Joining is
+explicit, microphone and camera begin off, and a player may join receive-only. The call
+continues through hand and match results but is not part of the game record or rules.
+
 ## Non-goals
 
-V1 does not include selectable or adaptive bot difficulty, public matchmaking, tournaments, payments, chat, a friends system, avatar marketplace, or leaderboards. Card Studio does not include asset garbage collection, moderation, rate limiting, AI generation, background removal, rotation controls, per-game artwork pinning, or administrator accounts. Authentication and role checks are a deliberate extension point after the public prototype.
+V1 does not include selectable or adaptive bot difficulty, public matchmaking, tournaments, payments, text chat, call recording, transcription, screen sharing, background effects, a friends system, avatar marketplace, or leaderboards. Card Studio does not include asset garbage collection, moderation, rate limiting, AI generation, background removal, rotation controls, per-game artwork pinning, or administrator accounts. Authentication and role checks are a deliberate extension point after the public prototype.
 
 ## User journey
 
@@ -40,6 +44,7 @@ The invite code is short, human-enterable, unique among joinable games, and maps
 | Landing | Name, create-game, and join-by-code controls are available without account creation. |
 | Waiting for opponent | Creator sees the invite URL/code, copy controls, and a waiting status. They may refresh safely. |
 | Playing | Show the player’s hand, their legal turn actions, public piles, turn/status, hand and match scores, and opponent card count only. |
+| Optional call | Human opponents may open a pre-join panel, opt into microphone and/or camera, or join receive-only. Video occupies the player avatars and remote video can open in a dismissible larger view. |
 | Naia playing | Show Naia as a computer opponent and advance one server-controlled action after a brief thinking beat. Refresh safely resumes any pending Naia action. |
 | Disconnected opponent | Keep the game state intact, show a clear reconnecting/offline status, and disable actions that require the absent player. Resume when the opponent reconnects. |
 | Hand result | Freeze play and show declaration, melds, deadwood, layoff result where applicable, points awarded, and updated match score. Each player selects Start next hand; the server deals only when both have acknowledged the result. |

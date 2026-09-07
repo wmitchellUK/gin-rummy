@@ -65,6 +65,8 @@ Desktop may use `position: relative` for the table composition, but interactive 
 | Component | Responsibility and visual rules |
 | --- | --- |
 | `GameTable` | Hosts the authoritative projected state, responsive table layout, connection status, and modal layer. Announces phase/turn changes; does not infer legality client-side. |
+| `MediaCall` | Optional human-game voice/video layer. It stays mounted across active play and result views, starts microphone and camera off, exposes device and leave controls, and disconnects on route exit/rematch. It never changes game state. |
+| `MediaAvatar` | 88px desktop / 64px mobile circular local or remote video, falling back to initials or Naia's portrait. Local video is mirrored, remote video is not. Text/icons accompany speaking, muted, connecting, and not-in-call states; remote video opens a non-modal larger view. |
 | `OpponentArea` | Shows display name, dealer/current-turn text, match score, connection marker, and hidden-card count. Render card backs only—never identities—until a result legitimately reveals them. |
 | `PlayerArea` | Shows “You”, match score, dealer/current-turn label, `CardHand`, card count, and saved-order guidance. It is visually dominant. |
 | `Card` | Semantic button when selectable; otherwise an article/image-equivalent with accessible rank/suit name. Face uses cream, black/red pips, corner indices, and a high-contrast back. Selected cards lift 8px and receive gold outline; forbidden cards state why in text/accessible description. |
@@ -107,6 +109,7 @@ All user actions send an intent with the current version and idempotency key. Th
 - Trap focus in `HandResolutionTable` and `GameResult`, focus their title on open, and return focus to the invoking control when appropriate. Decorative moving layoff cards stay outside the accessibility tree; a polite live region announces every layoff and remaining deadwood. Avoid repeating announcements or restarting a sequence after a refetch with unchanged hand identity.
 - Respect `prefers-reduced-motion`: no dealing, fanning, lifting, modal, layoff, or score-count animation; completed hands open directly in their fully resolved state. Otherwise use restrained 150–250ms interface transitions and 450ms physical layoff motion, never motion needed to understand rules or state.
 - Touch targets are at least 44×44px. Every hover affordance (card lift, pile highlight, tooltip) has an always-available tap, focus, or text equivalent. Test at 375px width, 200% zoom, keyboard-only, and screen-reader flows.
+- Call controls remain keyboard reachable inside hand-result and match-result focus traps. Permission denials are described in text, and the larger remote-video view closes with its button or Escape without disabling card play.
 
 ## Implementation guardrails
 

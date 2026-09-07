@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { ensureAnonymousSession } from "@/lib/supabase/anonymous";
@@ -14,6 +13,7 @@ import { CardHand, moveVisibleCard, orderVisibleCards, reconcileKnownOrder } fro
 import { ContextualGameActions } from "./game-actions";
 import { CardFace, cardLabel } from "./game-card";
 import { HandResolutionTable } from "./hand-resolution-table";
+import { MediaAvatar, MediaCall, MediaDock, MediaModalControls } from "./media-call";
 
 type ApiResponse = { game?: PlayerGameView; rematchGameId?: string; error?: { code?: string } };
 type RecentGame = { gameId: string; opponent: string; updatedAt: number };
@@ -167,11 +167,12 @@ function GameScreenContent({ gameId }: { gameId: string }) {
   const youAreActive = game.legalControls.length > 0;
   const isPlaying = gameplayControlsAreAvailable(game);
 
-  return <main className="game-shell"><section className="game-table">
+  return <MediaCall key={gameId} game={game}><main className="game-shell"><section className="game-table">
     <header className="table-header"><Link className="wordmark" href="/">Gin <span>Rummy</span></Link><div className="table-tools"><span className="table-status">{game.mode === "SINGLE_PLAYER" ? "Table with Naia" : "Private table"}</span><Link href="/settings" aria-label="Settings" className="icon-button">⚙</Link></div></header>
+    <MediaDock />
     {game.status === "WAITING" ? <WaitingGame inviteUrl={inviteUrl} /> : isPlaying ? <>
       <section className="opponent-area" aria-label={game.opponent?.kind === "BOT" ? "Naia, computer opponent" : "Opponent"}>
-        <div className="player-identity opponent-identity"><div className={`avatar${game.opponent?.kind === "BOT" ? " bot-avatar" : ""}`} aria-hidden="true">{game.opponent?.kind === "BOT" ? <Image src="/avatars/Naia-pomeranian.webp" alt="" width={64} height={64} priority /> : initials(game.opponent?.displayName ?? "?")}</div><div className="identity-copy"><p className="eyebrow">Opponent <span className="connection"><i /> {game.opponent?.kind === "BOT" ? "Computer opponent" : "At table"}</span></p><div className="identity-line"><h1>{game.opponent?.displayName ?? "Opponent"}</h1><span className="identity-score"><span>Score</span>{game.opponent?.score ?? 0}</span></div><p className="seat-note">{game.opponent?.cardCount ?? 0} cards {game.dealerId ? "· Dealer" : ""}</p></div></div>
+        <div className="player-identity opponent-identity"><MediaAvatar kind={game.opponent?.kind === "BOT" ? "bot" : "remote"} name={game.opponent?.displayName ?? "Opponent"} /><div className="identity-copy"><p className="eyebrow">Opponent <span className="connection"><i /> {game.opponent?.kind === "BOT" ? "Computer opponent" : "At table"}</span></p><div className="identity-line"><h1>{game.opponent?.displayName ?? "Opponent"}</h1><span className="identity-score"><span>Score</span>{game.opponent?.score ?? 0}</span></div><p className="seat-note">{game.opponent?.cardCount ?? 0} cards {game.dealerId ? "· Dealer" : ""}</p></div></div>
         <OpponentHand count={game.opponent?.cardCount ?? 0} name={game.opponent?.displayName ?? "Opponent"} /><ScoreHud game={game} />
       </section>
       <section className="table-center" aria-label="Public piles and turn status">
@@ -181,14 +182,14 @@ function GameScreenContent({ gameId }: { gameId: string }) {
         </div><TurnPrompt game={game} active={youAreActive} selected={selected} selectedActions={selectedActions} />
       </section>
       <section className="player-area" aria-labelledby="your-hand">
-        <div className="player-hand-heading"><div className="player-identity"><div className="avatar you-avatar" aria-hidden="true">{initials(game.you.displayName)}</div><div className="identity-copy"><p className="eyebrow">You {youAreActive ? "· Your turn" : "· At the table"}</p><div className="identity-line"><h2 id="your-hand">{game.you.displayName}</h2><span className="identity-score"><span>Score</span>{game.you.score}</span></div></div></div><div className="hand-tools"><span>{game.you.hand.length} cards</span><small>{busy ? "Order saved" : "Drag to organize"}</small></div></div>
+        <div className="player-hand-heading"><div className="player-identity"><MediaAvatar kind="local" name={game.you.displayName} /><div className="identity-copy"><p className="eyebrow">You {youAreActive ? "· Your turn" : "· At the table"}</p><div className="identity-line"><h2 id="your-hand">{game.you.displayName}</h2><span className="identity-score"><span>Score</span>{game.you.score}</span></div></div></div><div className="hand-tools"><span>{game.you.hand.length} cards</span><small>{busy ? "Order saved" : "Drag to organize"}</small></div></div>
         <CardHand cards={orderedHand} meldCandidates={game.you.meldCandidates ?? []} selectedCardId={selectedCardId} canDiscard={can("DISCARD")} canReorder={isPlaying && !busy} restrictedId={game.turnRestrictions?.cannotDiscardCardId} drawnId={game.drawnStockCardId} onSelect={setSelectedCardId} onMove={moveCard} />
       </section>
       {error && <p role="alert" className="game-error">{error}</p>}
       <ContextualGameActions legalControls={game.legalControls} busy={busy} discard={discard} selected={selected} selectedActions={selectedActions} onAction={action} />
     </> : game.status === "HAND_COMPLETE" ? <HandCompleteResult game={game} onStartNextHand={() => void action("START_NEXT_HAND")} canStartNextHand={can("START_NEXT_HAND")} /> : <GameResult game={game} busy={busy} onRematch={rematch} />}
     {error && !isPlaying && <p role="alert" className="game-error">{error}</p>}
-  </section></main>;
+  </section></main></MediaCall>;
 }
 
 function OpponentHand({ count, name }: { count: number; name: string }) { return <div className="opponent-hand" aria-label={`${name} has ${count} cards`}>{Array.from({ length: count }, (_, index) => <span className="opponent-card" style={{ "--card-index": index, "--card-count": count } as CSSProperties} key={index}><CardBack /></span>)}</div>; }
@@ -330,12 +331,11 @@ function ResultOverlay({ title, kicker, children, wide = false }: { title: strin
       previouslyFocused?.focus();
     };
   }, []);
-  return <section className="result-backdrop"><div ref={panel} className={`result-panel${wide ? " result-panel-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}><div className="result-handle" aria-hidden="true" /><p className="eyebrow">{kicker}</p><h1 ref={titleRef} id={titleId} tabIndex={-1}>{title}</h1>{children}</div></section>;
+  return <section className="result-backdrop"><div ref={panel} className={`result-panel${wide ? " result-panel-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}><div className="result-handle" aria-hidden="true" /><p className="eyebrow">{kicker}</p><h1 ref={titleRef} id={titleId} tabIndex={-1}>{title}</h1>{children}<MediaModalControls /></div></section>;
 }
 function Readiness({ readiness, opponentName }: { readiness: PlayerGameView["nextHandReadiness"]; opponentName: string }) { return <div className="readiness" aria-label="Next hand readiness"><span className={readiness?.you ? "is-ready" : ""}>You {readiness?.you ? "ready" : "reviewing"}</span><span className={readiness?.opponent ? "is-ready" : ""}>{opponentName} {readiness?.opponent ? "ready" : "reviewing"}</span></div>; }
 function MatchScores({ scores }: { scores: readonly HandScoreView[] }) { return <section className="match-scores" aria-label="Match score">{scores.map((score) => <div key={score.playerId}><span>{score.displayName}</span><strong>{score.score}</strong></div>)}</section>; }
 function turnInstruction(game: PlayerGameView, selected?: PublicCard, selectedActions?: ReturnType<typeof selectedDiscardActionAvailability>) { if (game.phase === "OPENING_NON_DEALER" || game.phase === "OPENING_DEALER") return game.legalControls.length ? "Take the up-card or pass" : "Considering the up-card"; if (game.phase === "AWAITING_DRAW") return game.legalControls.length ? "Draw a card" : "Choosing a draw"; if (game.phase === "AWAITING_DISCARD") { if (!game.legalControls.length) return "Choosing a discard"; if (selectedActions?.isProhibitedDiscard) return "Choose another card"; if (selectedActions?.canGin) return "You can Gin!"; if (selectedActions?.canKnock) return "Discard or knock"; return selected ? "Discard the selected card" : "Choose a card to discard"; } return "Review the hand result"; }
-function initials(value: string) { return value.slice(0, 2).toUpperCase(); }
 export function actionMessage(cause: unknown) {
   if (!(cause instanceof Error)) return "Action failed. Please try again.";
   if (cause.message === "STALE_VERSION") return "The game changed. The latest state has been loaded.";
