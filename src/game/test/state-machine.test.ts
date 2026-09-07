@@ -98,6 +98,43 @@ describe("explicit state machine", () => {
     expect(result.discardPile).toEqual(before.slice(1));
   });
 
+  it("allows the dealer to discard after drawing the sole discard following an opening take", () => {
+    const opening = startedState();
+    const taken = expectOk(applyAction(opening, {
+      type: "TAKE_INITIAL_UPCARD", actorId: P2, actionId: aid(), expectedVersion: opening.version,
+    })).nextState;
+    if (taken.phase !== "AWAITING_DISCARD") throw new Error("Unexpected phase");
+    const firstDiscard = taken.players.find((player) => player.id === P2)!.hand
+      .find((card) => card.id !== taken.forbiddenDiscardId)!;
+    const dealerDraw = expectOk(applyAction(taken, {
+      type: "DISCARD", actorId: P2, actionId: aid(), expectedVersion: taken.version, cardId: firstDiscard.id,
+    })).nextState;
+    const drawn = expectOk(applyAction(dealerDraw, {
+      type: "DRAW_DISCARD", actorId: P1, actionId: aid(), expectedVersion: dealerDraw.version,
+    })).nextState;
+
+    expect(drawn).toMatchObject({
+      phase: "AWAITING_DISCARD",
+      currentPlayerId: P1,
+      discardPile: [],
+      drawSource: "DISCARD",
+      drawnCardId: firstDiscard.id,
+      forbiddenDiscardId: firstDiscard.id,
+    });
+    expect(drawn.players.find((player) => player.id === P1)!.hand).toHaveLength(11);
+    if (drawn.phase !== "AWAITING_DISCARD") throw new Error("Unexpected phase");
+    const dealerDiscard = drawn.players.find((player) => player.id === P1)!.hand
+      .find((card) => card.id !== drawn.forbiddenDiscardId)!;
+    const continued = expectOk(applyAction(drawn, {
+      type: "DISCARD", actorId: P1, actionId: aid(), expectedVersion: drawn.version, cardId: dealerDiscard.id,
+    })).nextState;
+
+    expect(continued).toMatchObject({
+      phase: "AWAITING_DRAW", currentPlayerId: P2, discardPile: [dealerDiscard], drawRestriction: "EITHER_PILE",
+    });
+    expect(continued.players.find((player) => player.id === P1)!.hand).toHaveLength(10);
+  });
+
   it.each(["DISCARD", "KNOCK", "GIN"] as const)("rejects illegal rediscard for %s", (type) => {
     const actor = hand("A♥ 2♥ 3♥ 4♣ 5♣ 6♣ 10♦ J♦ Q♦ K♦ 9♠");
     const opponent = hand("A♣ 2♣ 3♣ 7♥ 8♥ 9♥ Q♠ Q♥ Q♣ 5♦");

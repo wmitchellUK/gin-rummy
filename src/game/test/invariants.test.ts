@@ -60,6 +60,26 @@ describe("state and deal integrity", () => {
     expect(validateGameState(corrupt)).toMatchObject({ ok: false, code: "INVALID_STATE" });
   });
 
+  it("rejects an empty discard pile while awaiting a discard after a stock draw", () => {
+    const state = drawState(
+      startedState().players[0].hand,
+      startedState().players[1].hand,
+    );
+    const result = applyAction(state, {
+      type: "DRAW_STOCK", actorId: P1, actionId: AID, expectedVersion: state.version,
+    });
+    if (!result.ok || result.nextState.phase !== "AWAITING_DISCARD") throw new Error("Could not create discard state");
+    const drawn = result.nextState;
+    const corrupt = {
+      ...drawn,
+      stock: [...drawn.stock, ...drawn.discardPile],
+      discardPile: [],
+    } as GameState;
+    expect(validateGameState(corrupt)).toEqual({
+      ok: false, code: "INVALID_STATE", message: "The discard pile is empty.",
+    });
+  });
+
   it("rejects an invalid current player", () => {
     const state = startedState();
     const corrupt = { ...state, currentPlayerId: "stranger" } as unknown as GameState;

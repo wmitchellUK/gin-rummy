@@ -189,7 +189,7 @@ Validate the entire incoming state before applying an action. A corrupt state re
 - `version`, hand number, scores, bonuses, thresholds, and target are non-negative integers where applicable; match target is positive.
 - Player IDs are unique and phase-appropriate. Active phases contain exactly two players.
 - From the first deal onward, every canonical card appears exactly once across both hands, stock, and discard pile. All 52 canonical cards are present.
-- The discard pile is non-empty during an active hand.
+- The discard pile is non-empty during an active hand except while the current player is awaiting a discard after taking the only face-up card; their next discard restores the pile.
 - Normal opening/draw phases have 10 cards per player. `AWAITING_DISCARD` has 11 for the acting player and 10 for the opponent.
 - A cancelled hand may retain 11 cards for the player whose stock draw reduced the stock to two; cards remain hidden and are redealt next hand.
 - `currentPlayerId`, dealer, initial up-card, forbidden discard, hand results, scores, and history agree with the phase and card zones.

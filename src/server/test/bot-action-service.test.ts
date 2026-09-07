@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { GameState, PlayerId } from "@/src/game";
+import { applyAction, createWaitingGame, standardDeck, validateGameState, type ActionId, type GameState, type PlayerId } from "@/src/game";
 import { hand } from "@/src/game/test/card-fixtures";
 import { drawState } from "@/src/game/test/state-fixtures";
 
@@ -41,6 +41,47 @@ function botDrawState(): GameState {
   };
 }
 
+function nextState(result: ReturnType<typeof applyAction>): GameState {
+  if (!result.ok) throw new Error(`Could not create bot fixture: ${result.error.code}`);
+  return result.nextState;
+}
+
+function botDiscardStateAfterSoleDraw(): Extract<GameState, { phase: "AWAITING_DISCARD" }> {
+  const started = nextState(applyAction(createWaitingGame(gameId, humanId), {
+    type: "START_GAME",
+    actorId: "SYSTEM",
+    actionId: "bot-fixture-start" as ActionId,
+    expectedVersion: 0,
+    opponentId: botId,
+    dealPlan: { deck: standardDeck(), dealerId: botId },
+  }));
+  if (started.phase !== "OPENING_NON_DEALER") throw new Error("Could not create opening bot fixture");
+  const taken = nextState(applyAction(started, {
+    type: "TAKE_INITIAL_UPCARD",
+    actorId: humanId,
+    actionId: "bot-fixture-take" as ActionId,
+    expectedVersion: started.version,
+  }));
+  if (taken.phase !== "AWAITING_DISCARD") throw new Error("Could not create human discard fixture");
+  const humanDiscard = taken.players.find((player) => player.id === humanId)!.hand
+    .find((card) => card.id !== taken.forbiddenDiscardId)!;
+  const awaitingBot = nextState(applyAction(taken, {
+    type: "DISCARD",
+    actorId: humanId,
+    actionId: "bot-fixture-discard" as ActionId,
+    expectedVersion: taken.version,
+    cardId: humanDiscard.id,
+  }));
+  const botDrawn = nextState(applyAction(awaitingBot, {
+    type: "DRAW_DISCARD",
+    actorId: botId,
+    actionId: "bot-fixture-draw" as ActionId,
+    expectedVersion: awaitingBot.version,
+  }));
+  if (botDrawn.phase !== "AWAITING_DISCARD") throw new Error("Could not create bot discard fixture");
+  return botDrawn;
+}
+
 describe("single-player bot action service", () => {
   let persisted: GameState;
 
@@ -79,6 +120,33 @@ describe("single-player bot action service", () => {
     for (const card of persisted.players[1]!.hand) expect(payload).not.toContain(card.id);
     for (const card of persisted.stock) expect(payload).not.toContain(card.id);
     expect(result.game.opponent).toMatchObject({ displayName: "Naia", kind: "BOT", cardCount: 11 });
+  });
+
+  it("lets Naia act after drawing the sole discard", async () => {
+    persisted = botDiscardStateAfterSoleDraw();
+    const forbiddenDiscardId = persisted.forbiddenDiscardId;
+    const priorVersion = persisted.version;
+    expect(persisted).toMatchObject({
+      dealerId: botId,
+      currentPlayerId: botId,
+      phase: "AWAITING_DISCARD",
+      drawSource: "DISCARD",
+      discardPile: [],
+    });
+
+    const result = await applyPendingBotAction(gameId, humanId, priorVersion);
+
+    expect(result.advanced).toBe(true);
+    expect(persisted.version).toBe(priorVersion + 1);
+    expect(["AWAITING_DRAW", "HAND_COMPLETE", "GAME_COMPLETE"]).toContain(persisted.phase);
+    const committed = repository.commitGameAction.mock.calls[0]![0] as {
+      actionType: string;
+      cardId?: string;
+    };
+    expect(["DISCARD", "KNOCK", "GIN"]).toContain(committed.actionType);
+    expect(committed.cardId).not.toBe(forbiddenDiscardId);
+    expect(persisted.discardPile[0]?.id).toBe(committed.cardId);
+    expect(validateGameState(persisted)).toEqual({ ok: true });
   });
 
   it("treats stale or premature wakeups as safe no-ops", async () => {

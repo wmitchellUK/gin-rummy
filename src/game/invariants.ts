@@ -77,8 +77,9 @@ export function validateGameState(state: GameState): StateValidation {
   if (allCards.some((card) => !isCanonicalCard(card))) return { ok: false, code: "MALFORMED_CARD", message: "A card is malformed." };
   if (new globalThis.Set(allCards.map((card) => `${card.rank}:${card.suit}`)).size !== allCards.length) return { ok: false, code: "DUPLICATE_CARD", message: "A card appears more than once." };
   if (allCards.length !== 52) return fail("The canonical deck is incomplete.");
-  if (state.discardPile.length === 0
-    && !(state.phase === "AWAITING_DISCARD" && state.drawSource === "INITIAL_UPCARD")) return fail("The discard pile is empty.");
+  const mayHaveEmptyDiscardPile = state.phase === "AWAITING_DISCARD"
+    && (state.drawSource === "INITIAL_UPCARD" || state.drawSource === "DISCARD");
+  if (state.discardPile.length === 0 && !mayHaveEmptyDiscardPile) return fail("The discard pile is empty.");
   const handSizes = state.players.map((player) => player.hand.length).sort((a, b) => a - b).join(",");
   const active = !handIsComplete;
   if (active && state.stock.length < 3) return fail("An active hand has too few stock cards.");
