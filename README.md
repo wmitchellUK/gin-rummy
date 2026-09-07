@@ -63,7 +63,7 @@ Vercel will build the commit and promote it to production when the deployment
 checks pass. Pull requests and non-production branches create preview deployments
 when that option is enabled in the Vercel project.
 
-### Supabase configuration
+### Supabase configuration and production migrations
 
 Before the first production deploy, link the local Supabase project and apply the
 committed migrations:
@@ -73,6 +73,33 @@ npx supabase login
 npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase db push
 ```
+
+Apply new migrations before merging application code that depends on them. Verify
+that the local and production histories match before allowing Vercel to deploy:
+
+```bash
+npx supabase migration list
+```
+
+The `Production migration parity` GitHub workflow performs the same read-only check
+for every pull request to `main`. Configure these GitHub Actions repository secrets:
+
+```text
+SUPABASE_ACCESS_TOKEN
+SUPABASE_PROJECT_REF
+SUPABASE_DB_PASSWORD
+```
+
+In the `main` branch rules, require the `Check production migrations` status check,
+require pull requests, and disable direct pushes. A migration-bearing release then
+uses this order:
+
+1. Apply the migration to production with `npx supabase db push`.
+2. Confirm `npx supabase migration list` shows matching local and remote versions.
+3. Merge the application change so Vercel can deploy it.
+
+Use `npx supabase db push --include-all` only to repair an out-of-order migration
+history after a dry run confirms the exact historical migration to apply.
 
 In Vercel Project Settings → Environment Variables, configure the values from
 `.env.example` for Production (and Preview if needed):

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlayerGameView, PublicCard, RevealedPlayerHandView, ScoredHandResultView } from "@/src/shared/game-view";
 import { actionMessage, GameResult, HandCompleteResult, newestGameView } from "./game-screen";
@@ -7,14 +7,15 @@ const card = (id: string, rank: string, suit: string): PublicCard => ({ id, rank
 const runCards = [card("A:HEARTS", "A", "HEARTS"), card("2:HEARTS", "2", "HEARTS"), card("3:HEARTS", "3", "HEARTS")];
 const deadwood = card("9:CLUBS", "9", "CLUBS");
 
-const player = (playerId: string, displayName: string, finalDeadwoodValue: number): RevealedPlayerHandView => ({
+const player = (playerId: string, displayName: string, finalDeadwoodValue: number, seat: 0 | 1 = playerId === "p1" ? 0 : 1): RevealedPlayerHandView => ({
   playerId,
   displayName,
+  seat,
   revealedHand: [...runCards, deadwood],
   melds: [{ kind: "RUN", cards: runCards }],
   originalDeadwoodCards: [deadwood],
   originalDeadwoodValue: 9,
-  layoffs: finalDeadwoodValue === 0 ? [{ card: deadwood, resultingMeld: { kind: "SET", cards: [deadwood, card("9:DIAMONDS", "9", "DIAMONDS"), card("9:HEARTS", "9", "HEARTS")] } }] : [],
+  layoffs: finalDeadwoodValue === 0 ? [{ card: deadwood, targetMeldIndex: 0, remainingDeadwoodValue: 0, resultingMeld: { kind: "SET", cards: [deadwood, card("9:DIAMONDS", "9", "DIAMONDS"), card("9:HEARTS", "9", "HEARTS")] } }] : [],
   finalDeadwoodCards: finalDeadwoodValue ? [deadwood] : [],
   finalDeadwoodValue,
 });
@@ -53,10 +54,14 @@ function finalHand(opponentName = "Kim", handNumber = 3): ScoredHandResultView {
   };
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  vi.useRealTimers();
+});
 
 describe("game result surfaces", () => {
-  it("shows the complete scored-hand breakdown and traps focus in the sheet", async () => {
+  it("shows the resolved tabletop, readiness, and traps focus in the sheet", async () => {
     const game: PlayerGameView = {
       ...baseGame(),
       nextHandReadiness: { you: false, opponent: true },
@@ -70,22 +75,24 @@ describe("game result surfaces", () => {
         winnerName: "Will",
         scoringReason: "KNOCK",
         pointsAwarded: 9,
-        players: [player("p1", "Will", 9), player("p2", "Kim", 0)],
+        players: [player("p1", "Will", 9), { ...player("p2", "Kim", 18), originalDeadwoodValue: 18 }],
         scoresAfter: [{ playerId: "p1", displayName: "Will", score: 31 }, { playerId: "p2", displayName: "Kim", score: 18 }],
       },
     };
     const onStart = vi.fn();
     render(<><button>Background action</button><HandCompleteResult game={game} onStartNextHand={onStart} canStartNextHand /></>);
-    expect(screen.getAllByText("Original deadwood")).toHaveLength(2);
-    expect(screen.getAllByText("Final deadwood")).toHaveLength(2);
-    expect(screen.getByText("Layoffs")).toBeInTheDocument();
+    expect(screen.getByText("Will knocked with 9 deadwood.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show result" }));
+    expect(screen.getByRole("heading", { name: "Knock wins" })).toBeInTheDocument();
+    expect(screen.getByText("18 − 9 = 9")).toBeInTheDocument();
     expect(screen.getByText("Kim ready")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ready for next hand" })).toBeEnabled();
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Hand over" })));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Hand 2 resolution" })));
     expect(screen.getByText("Background action")).toHaveAttribute("aria-hidden", "true");
   });
 
   it("renders the celebration, complete final hand, and completed-hand history together", () => {
+    vi.useFakeTimers();
     const game: PlayerGameView = {
       ...baseGame(),
       status: "COMPLETE",
@@ -105,15 +112,18 @@ describe("game result surfaces", () => {
       },
     };
     const { container } = render(<GameResult game={game} busy={false} onRematch={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show result" }));
+    expect(screen.getByRole("heading", { name: "Knock wins" })).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(900));
     expect(screen.getByText("Will", { selector: ".match-winner strong" })).toBeInTheDocument();
     expect(screen.getByText("Will +34")).toBeInTheDocument();
     expect(screen.getByText("Stock exhausted")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Final hand · Hand 3" })).toBeInTheDocument();
-    expect(screen.getAllByText("Original deadwood")).toHaveLength(2);
-    expect(screen.getAllByText("Final deadwood")).toHaveLength(2);
-    expect(screen.getByText("18 − 9 = 9")).toBeInTheDocument();
     expect(container.querySelector(".victory-crest")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("button", { name: "Replay deciding hand" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Request rematch" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Replay deciding hand" }));
+    expect(screen.getByRole("heading", { name: "Deciding hand" })).toBeInTheDocument();
+    expect(container.querySelector("[data-resolution-stage]" )).toHaveAttribute("data-resolution-stage", "declaration");
   });
 
   it("keeps gin and undercut score formulas in the shared final-hand breakdown", () => {
@@ -141,7 +151,9 @@ describe("game result surfaces", () => {
       },
     });
     const { rerender } = render(<GameResult game={gameFor(ginHand)} busy={false} onRematch={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show result" }));
     expect(screen.getByText("9 + 25 = 34")).toBeInTheDocument();
+    expect(screen.getByText("Layoffs are not allowed against gin.")).toBeInTheDocument();
 
     const undercutHand: ScoredHandResultView = {
       ...finalHand(),
@@ -156,6 +168,7 @@ describe("game result surfaces", () => {
   });
 
   it("offers an immediate replay against Naia instead of multiplayer negotiation", () => {
+    vi.useFakeTimers();
     const onRematch = vi.fn();
     const game: PlayerGameView = {
       ...baseGame(),
@@ -174,6 +187,8 @@ describe("game result surfaces", () => {
       },
     };
     render(<GameResult game={game} busy={false} onRematch={onRematch} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show result" }));
+    act(() => vi.advanceTimersByTime(900));
     screen.getByRole("button", { name: "Play Naia again" }).click();
     expect(onRematch).toHaveBeenCalledWith("PLAY_AGAIN");
     expect(screen.queryByRole("button", { name: "Request rematch" })).not.toBeInTheDocument();

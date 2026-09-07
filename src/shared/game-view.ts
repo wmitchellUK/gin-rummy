@@ -24,13 +24,18 @@ export interface PublicMeld {
 
 export interface PublicLayoff {
   readonly card: PublicCard;
+  /** Stable slot in the declarer's original meld array. */
+  readonly targetMeldIndex: number;
   /** The engine-selected meld after this card was laid off. */
   readonly resultingMeld: PublicMeld;
+  /** Defender deadwood after this deterministic layoff step. */
+  readonly remainingDeadwoodValue: number;
 }
 
 export interface RevealedPlayerHandView {
   readonly playerId: string;
   readonly displayName: string;
+  readonly seat: 0 | 1;
   readonly revealedHand: readonly PublicCard[];
   readonly melds: readonly PublicMeld[];
   readonly originalDeadwoodCards: readonly PublicCard[];

@@ -1,4 +1,4 @@
-import { analyzeHand, generateCandidateMelds, type Card, type GameResult, type GameState, type HandResult, type Meld, type PlayerHandResult } from "@/src/game";
+import { analyzeHand, cardValue, generateCandidateMelds, meldSignature, type Card, type GameResult, type GameState, type HandResult, type Meld } from "@/src/game";
 import type {
   CompletedHandSummaryView, DiscardOutcomeView, GameResultView, HandResultView, HandScoreView, LegalControl,
   PlayerGameView, PublicCard, PublicLayoff, PublicMeld, RevealedPlayerHandView,
@@ -30,9 +30,6 @@ function status(state: GameState): PlayerGameView["status"] {
 
 const publicCard = (card: Card): PublicCard => card;
 const publicMeld = (meld: Meld): PublicMeld => ({ kind: meld.kind, cards: meld.cards.map(publicCard) });
-const publicLayoff = (layoff: PlayerHandResult["layoffs"][number]): PublicLayoff => ({
-  card: publicCard(layoff.card), resultingMeld: publicMeld(layoff.resultingMeld),
-});
 function pair<T>(items: readonly T[]): readonly [T, T] {
   if (items.length !== 2) throw new Error("A hand result must contain two players.");
   return [items[0]!, items[1]!];
@@ -49,12 +46,29 @@ function projectHandResult(result: HandResult, snapshots: readonly PlayerSnapsho
       scoresAfter: pair(scoresAfter),
     };
   }
-  const players = result.players.map((player): RevealedPlayerHandView => ({
-    playerId: player.playerId, displayName: nameFor(player.playerId), revealedHand: player.revealedHand.map(publicCard),
-    melds: player.melds.map(publicMeld), originalDeadwoodCards: player.originalDeadwoodCards.map(publicCard),
-    originalDeadwoodValue: player.originalDeadwoodValue, layoffs: player.layoffs.map(publicLayoff),
-    finalDeadwoodCards: player.finalDeadwoodCards.map(publicCard), finalDeadwoodValue: player.finalDeadwoodValue,
-  }));
+  const declarer = result.players.find((player) => player.playerId === result.declarerId)!;
+  const players = result.players.map((player): RevealedPlayerHandView => {
+    let remainingDeadwoodValue = player.originalDeadwoodValue;
+    const targetMelds = [...declarer.melds];
+    const layoffs = player.layoffs.map((layoff): PublicLayoff => {
+      const targetMeldIndex = targetMelds.findIndex((meld) => meldSignature(meld) === layoff.targetMeldSignatureBefore);
+      if (targetMeldIndex < 0) throw new Error("A scored layoff must identify its target meld.");
+      targetMelds[targetMeldIndex] = layoff.resultingMeld;
+      remainingDeadwoodValue -= cardValue(layoff.card);
+      return {
+        card: publicCard(layoff.card), targetMeldIndex, resultingMeld: publicMeld(layoff.resultingMeld),
+        remainingDeadwoodValue,
+      };
+    });
+    const snapshot = snapshots.find((item) => item.playerId === player.playerId);
+    if (!snapshot) throw new Error("A revealed player must have a seat snapshot.");
+    return {
+      playerId: player.playerId, displayName: nameFor(player.playerId), seat: snapshot.seat,
+      revealedHand: player.revealedHand.map(publicCard), melds: player.melds.map(publicMeld),
+      originalDeadwoodCards: player.originalDeadwoodCards.map(publicCard), originalDeadwoodValue: player.originalDeadwoodValue,
+      layoffs, finalDeadwoodCards: player.finalDeadwoodCards.map(publicCard), finalDeadwoodValue: player.finalDeadwoodValue,
+    };
+  });
   return {
     kind: "SCORED", handNumber: result.handNumber, declaration: result.declaration,
     declarerId: result.declarerId, declarerName: nameFor(result.declarerId),

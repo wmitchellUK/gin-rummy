@@ -98,8 +98,20 @@ describe("browser game projection", () => {
       knockerHand.map((card) => card.id).sort(), opponentHand.map((card) => card.id).sort(),
     ]);
     const opponent = ada.handResult.players.find((player) => player.playerId === P2)!;
-    expect(opponent).toMatchObject({ originalDeadwoodValue: 7, finalDeadwoodValue: 4 });
+    expect(ada.handResult.players.map((player) => player.seat)).toEqual([0, 1]);
+    expect(opponent).toMatchObject({ seat: 1, originalDeadwoodValue: 7, finalDeadwoodValue: 4 });
     expect(opponent.layoffs.map((layoff) => layoff.card.id).sort()).toEqual(["2:HEARTS", "A:HEARTS"]);
+    expect(opponent.layoffs.map((layoff) => ({
+      cardId: layoff.card.id,
+      targetMeldIndex: layoff.targetMeldIndex,
+      remainingDeadwoodValue: layoff.remainingDeadwoodValue,
+    }))).toEqual([
+      { cardId: "2:HEARTS", targetMeldIndex: 0, remainingDeadwoodValue: 5 },
+      { cardId: "A:HEARTS", targetMeldIndex: 0, remainingDeadwoodValue: 4 },
+    ]);
+    expect(opponent.layoffs[1]?.resultingMeld.cards.map((card) => card.id)).toEqual([
+      "A:HEARTS", "2:HEARTS", "3:HEARTS", "4:HEARTS", "5:HEARTS",
+    ]);
     expect(opponent.finalDeadwoodCards.map((card) => card.id).sort()).toEqual(["3:CLUBS", "A:SPADES"]);
 
     const publicResult = JSON.stringify(ada.handResult);

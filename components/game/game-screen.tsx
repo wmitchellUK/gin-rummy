@@ -6,13 +6,14 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { ensureAnonymousSession } from "@/lib/supabase/anonymous";
 import {
-  gameplayControlsAreAvailable, selectedDiscardActionAvailability, type HandResultView, type HandScoreView,
-  type LegalControl, type PlayerGameView, type PublicCard, type PublicMeld, type RevealedPlayerHandView,
+  gameplayControlsAreAvailable, selectedDiscardActionAvailability, type HandScoreView,
+  type LegalControl, type PlayerGameView, type PublicCard,
 } from "@/src/shared/game-view";
 import { CardArtProvider } from "./card-art-provider";
 import { CardHand, moveVisibleCard, orderVisibleCards, reconcileKnownOrder } from "./card-hand";
 import { ContextualGameActions } from "./game-actions";
-import { CardFace, CardMark, cardLabel } from "./game-card";
+import { CardFace, cardLabel } from "./game-card";
+import { HandResolutionTable } from "./hand-resolution-table";
 
 type ApiResponse = { game?: PlayerGameView; rematchGameId?: string; error?: { code?: string } };
 type RecentGame = { gameId: string; opponent: string; updatedAt: number };
@@ -209,23 +210,55 @@ export function HandCompleteResult({ game, onStartNextHand, canStartNextHand }: 
     <MatchScores scores={result.scoresAfter} />
     {footer}
   </ResultOverlay>;
-  return <ResultOverlay title="Hand over" kicker={`${result.declarerName} ${result.declaration === "KNOCK" ? "knocked" : "went gin"}`}>
-    <ScoredHandBreakdown result={result} game={game} />
-    <MatchScores scores={result.scoresAfter} />
-    {footer}
+  return <ResultOverlay title={`Hand ${result.handNumber} resolution`} kicker="The hand is over" wide>
+    <HandResolutionTable
+      gameId={game.gameId}
+      result={result}
+      viewerSeat={game.you.seat}
+      rules={game.rules}
+      finalDiscard={game.discardPile[0]}
+      footer={<><MatchScores scores={result.scoresAfter} />{footer}</>}
+    />
   </ResultOverlay>;
 }
 export function GameResult({ game, busy, onRematch }: { game: PlayerGameView; busy: boolean; onRematch: (response: "REQUEST" | "ACCEPT" | "PLAY_AGAIN") => Promise<void> }) {
   const result = game.gameResult;
   if (!result) return null;
+  return <CompletedGameResult game={game} busy={busy} onRematch={onRematch} />;
+}
+function CompletedGameResult({ game, busy, onRematch }: { game: PlayerGameView; busy: boolean; onRematch: (response: "REQUEST" | "ACCEPT" | "PLAY_AGAIN") => Promise<void> }) {
+  const result = game.gameResult!;
+  const [showDecidingHand, setShowDecidingHand] = useState(true);
+  const [replayToken, setReplayToken] = useState(0);
+  const transitionTimer = useRef<number | undefined>(undefined);
+  const showWinner = useCallback(() => {
+    if (transitionTimer.current !== undefined) window.clearTimeout(transitionTimer.current);
+    transitionTimer.current = window.setTimeout(() => setShowDecidingHand(false), 900);
+  }, []);
+  useEffect(() => () => {
+    if (transitionTimer.current !== undefined) window.clearTimeout(transitionTimer.current);
+  }, []);
+  function replayDecidingHand() {
+    if (transitionTimer.current !== undefined) window.clearTimeout(transitionTimer.current);
+    setReplayToken((value) => value + 1);
+    setShowDecidingHand(true);
+  }
+  if (showDecidingHand) return <ResultOverlay title="Deciding hand" kicker={`Hand ${result.finalHand.handNumber}`} wide>
+    <HandResolutionTable
+      gameId={game.gameId}
+      result={result.finalHand}
+      viewerSeat={game.you.seat}
+      rules={game.rules}
+      finalDiscard={game.discardPile[0]}
+      replayToken={replayToken}
+      onOutcome={showWinner}
+    />
+  </ResultOverlay>;
   return <ResultOverlay title="Match complete" kicker="A fine game">
     <VictoryCrest />
     <div className="match-winner"><span>Winner</span><strong>{result.winnerName}</strong><small>First to {result.matchTarget}</small></div>
     <MatchScores scores={result.finalScores} />
-    <section className="final-hand-summary" aria-labelledby="final-hand-title">
-      <div className="final-hand-heading"><p className="eyebrow">The deciding deal</p><h2 id="final-hand-title">Final hand · Hand {result.finalHand.handNumber}</h2></div>
-      <ScoredHandBreakdown result={result.finalHand} game={game} />
-    </section>
+    <button className="action-button secondary replay-deciding-hand" type="button" onClick={replayDecidingHand}>Replay deciding hand</button>
     <section className="hand-history" aria-labelledby="hand-history-title"><h2 id="hand-history-title">Hand history</h2>{result.completedHands.map((hand) => <div key={hand.handNumber}><span>Hand {hand.handNumber}</span><strong>{hand.kind === "CANCELLED" ? "No score" : `${hand.winnerName} +${hand.pointsAwarded}`}</strong><small>{hand.kind === "CANCELLED" ? "Stock exhausted" : hand.scoringReason === "GIN" ? "Gin" : hand.scoringReason === "UNDERCUT" ? "Undercut" : "Knock"}</small></div>)}</section>
     {game.mode === "SINGLE_PLAYER" ? <button className="action-button primary result-primary" onClick={() => void onRematch("PLAY_AGAIN")} disabled={busy}>Play Naia again</button> : <>
       {!game.rematch && <button className="action-button primary result-primary" onClick={() => void onRematch("REQUEST")} disabled={busy}>Request rematch</button>}
@@ -255,7 +288,7 @@ function VictoryCrest() {
     </svg>
   </div>;
 }
-function ResultOverlay({ title, kicker, children }: { title: string; kicker: string; children: React.ReactNode }) {
+function ResultOverlay({ title, kicker, children, wide = false }: { title: string; kicker: string; children: React.ReactNode; wide?: boolean }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -283,25 +316,12 @@ function ResultOverlay({ title, kicker, children }: { title: string; kicker: str
       previouslyFocused?.focus();
     };
   }, []);
-  return <section className="result-backdrop"><div ref={panel} className="result-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}><div className="result-handle" aria-hidden="true" /><p className="eyebrow">{kicker}</p><h1 ref={titleRef} id={titleId} tabIndex={-1}>{title}</h1>{children}</div></section>;
+  return <section className="result-backdrop"><div ref={panel} className={`result-panel${wide ? " result-panel-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}><div className="result-handle" aria-hidden="true" /><p className="eyebrow">{kicker}</p><h1 ref={titleRef} id={titleId} tabIndex={-1}>{title}</h1>{children}</div></section>;
 }
-function ScoredHandBreakdown({ result, game }: { result: Extract<HandResultView, { kind: "SCORED" }>; game: PlayerGameView }) {
-  const declarer = result.players.find((player) => player.playerId === result.declarerId)!;
-  const opponent = result.players.find((player) => player.playerId !== result.declarerId)!;
-  return <>
-    <div className="result-score"><strong>{result.winnerName} wins the hand</strong><span>+{result.pointsAwarded}</span><small>{scoreFormula(result, declarer, opponent, game)}</small></div>
-    <div className="revealed-hands">{result.players.map((player) => <RevealedHand key={player.playerId} player={player} />)}</div>
-  </>;
-}
-function RevealedHand({ player }: { player: RevealedPlayerHandView }) { return <article className="revealed-hand"><h2>{player.displayName}</h2><ResultCards cards={player.revealedHand} /><dl className="hand-breakdown"><div><dt>Melds</dt><dd>{player.melds.length ? player.melds.map((meld, index) => <span className="result-meld" key={index}><Meld cards={meld.cards} kind={meld.kind} /></span>) : "None"}</dd></div><div><dt>Original deadwood</dt><dd><CardMarks cards={player.originalDeadwoodCards} empty="None" /> <b>{player.originalDeadwoodValue} pts</b></dd></div>{player.layoffs.length > 0 && <div><dt>Layoffs</dt><dd>{player.layoffs.map((layoff) => <span className="result-layoff" key={layoff.card.id}><CardMark card={layoff.card} /> onto <Meld cards={layoff.resultingMeld.cards} kind={layoff.resultingMeld.kind} /></span>)}</dd></div>}<div><dt>Final deadwood</dt><dd><CardMarks cards={player.finalDeadwoodCards} empty="None" /> <b>{player.finalDeadwoodValue} pts</b></dd></div></dl></article>; }
-function ResultCards({ cards }: { cards: readonly PublicCard[] }) { return <div className="result-cards">{cards.map((card) => <span className="mini-card" role="img" aria-label={cardLabel(card)} key={card.id}><CardFace card={card} /></span>)}</div>; }
-function CardMarks({ cards, empty }: { cards: readonly PublicCard[]; empty: string }) { return <>{cards.length ? cards.map((card) => <CardMark card={card} key={card.id} />) : empty}</>; }
 function Readiness({ readiness, opponentName }: { readiness: PlayerGameView["nextHandReadiness"]; opponentName: string }) { return <div className="readiness" aria-label="Next hand readiness"><span className={readiness?.you ? "is-ready" : ""}>You {readiness?.you ? "ready" : "reviewing"}</span><span className={readiness?.opponent ? "is-ready" : ""}>{opponentName} {readiness?.opponent ? "ready" : "reviewing"}</span></div>; }
 function MatchScores({ scores }: { scores: readonly HandScoreView[] }) { return <section className="match-scores" aria-label="Match score">{scores.map((score) => <div key={score.playerId}><span>{score.displayName}</span><strong>{score.score}</strong></div>)}</section>; }
-function scoreFormula(result: Extract<HandResultView, { kind: "SCORED" }>, declarer: RevealedPlayerHandView, opponent: RevealedPlayerHandView, game: PlayerGameView) { if (result.scoringReason === "KNOCK") return `${opponent.finalDeadwoodValue} − ${declarer.originalDeadwoodValue} = ${result.pointsAwarded}`; if (result.scoringReason === "UNDERCUT") return `${declarer.originalDeadwoodValue} − ${opponent.finalDeadwoodValue} + ${game.rules.undercutBonus} = ${result.pointsAwarded}`; return `${opponent.originalDeadwoodValue} + ${game.rules.ginBonus} = ${result.pointsAwarded}`; }
 function turnInstruction(game: PlayerGameView, selected?: PublicCard, selectedActions?: ReturnType<typeof selectedDiscardActionAvailability>) { if (game.phase === "OPENING_NON_DEALER" || game.phase === "OPENING_DEALER") return game.legalControls.length ? "Take the up-card or pass" : "Considering the up-card"; if (game.phase === "AWAITING_DRAW") return game.legalControls.length ? "Draw a card" : "Choosing a draw"; if (game.phase === "AWAITING_DISCARD") { if (!game.legalControls.length) return "Choosing a discard"; if (selectedActions?.isProhibitedDiscard) return "Choose another card"; if (selectedActions?.canGin) return "You can Gin!"; if (selectedActions?.canKnock) return "Discard or knock"; return selected ? "Discard the selected card" : "Choose a card to discard"; } return "Review the hand result"; }
 function initials(value: string) { return value.slice(0, 2).toUpperCase(); }
-function Meld({ kind, cards }: Pick<PublicMeld, "kind" | "cards">) { return <>{kind === "RUN" ? "Run" : "Set"}: {cards.map((card) => <CardMark card={card} key={card.id} />)}</>; }
 export function actionMessage(cause: unknown) {
   if (!(cause instanceof Error)) return "Action failed. Please try again.";
   if (cause.message === "STALE_VERSION") return "The game changed. The latest state has been loaded.";
