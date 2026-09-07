@@ -1,6 +1,6 @@
 import { analyzeHand, cardValue, generateCandidateMelds, meldSignature, type Card, type GameResult, type GameState, type HandResult, type Meld } from "@/src/game";
 import type {
-  CompletedHandSummaryView, DiscardOutcomeView, GameResultView, HandResultView, HandScoreView, LegalControl,
+  DiscardOutcomeView, GameResultView, HandResultView, HandScoreView, LegalControl,
   PlayerGameView, PublicCard, PublicLayoff, PublicMeld, RevealedPlayerHandView,
 } from "@/src/shared/game-view";
 
@@ -72,6 +72,7 @@ function projectHandResult(result: HandResult, snapshots: readonly PlayerSnapsho
   return {
     kind: "SCORED", handNumber: result.handNumber, declaration: result.declaration,
     declarerId: result.declarerId, declarerName: nameFor(result.declarerId),
+    finalDiscard: publicCard(result.finalDiscard),
     winnerId: result.winnerId, winnerName: nameFor(result.winnerId), scoringReason: result.scoringReason,
     pointsAwarded: result.pointsAwarded,
     players: pair(players), scoresAfter: pair(scoresAfter),
@@ -82,33 +83,18 @@ function projectGameResult(result: GameResult, snapshots: readonly PlayerSnapsho
   const nameFor = (playerId: string) => snapshots.find((snapshot) => snapshot.playerId === playerId)?.displayName ?? "Player";
   const decidingHand = result.completedHands.at(-1);
   if (!decidingHand || decidingHand.kind !== "SCORED") throw new Error("A completed game must end with a scored hand.");
-  const finalHand = projectHandResult(decidingHand, snapshots);
-  if (finalHand.kind !== "SCORED") throw new Error("A completed game must project a scored final hand.");
   const finalScores = Object.entries(result.finalScores).map(([playerId, score]): HandScoreView => ({
     playerId,
     displayName: nameFor(playerId),
     score,
   }));
-  const completedHands = result.completedHands.map((hand): CompletedHandSummaryView => hand.kind === "CANCELLED" ? {
-    kind: "CANCELLED",
-    handNumber: hand.handNumber,
-    pointsAwarded: 0,
-  } : {
-    kind: "SCORED",
-    handNumber: hand.handNumber,
-    declaration: hand.declaration,
-    winnerId: hand.winnerId,
-    winnerName: nameFor(hand.winnerId),
-    scoringReason: hand.scoringReason,
-    pointsAwarded: hand.pointsAwarded,
-  });
+  const completedHands = result.completedHands.map((hand) => projectHandResult(hand, snapshots));
   return {
     winnerId: result.winnerId,
     winnerName: nameFor(result.winnerId),
     finalScores: pair(finalScores),
     matchTarget: result.matchTarget,
     completedHands,
-    finalHand,
   };
 }
 

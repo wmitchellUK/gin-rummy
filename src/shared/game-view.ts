@@ -51,30 +51,13 @@ export interface HandScoreView {
   readonly score: number;
 }
 
-export type CompletedHandSummaryView =
-  | {
-    readonly kind: "SCORED";
-    readonly handNumber: number;
-    readonly declaration: "KNOCK" | "GIN";
-    readonly winnerId: string;
-    readonly winnerName: string;
-    readonly scoringReason: "GIN" | "KNOCK" | "UNDERCUT";
-    readonly pointsAwarded: number;
-  }
-  | {
-    readonly kind: "CANCELLED";
-    readonly handNumber: number;
-    readonly pointsAwarded: 0;
-  };
-
 export interface GameResultView {
   readonly winnerId: string;
   readonly winnerName: string;
   readonly finalScores: readonly [HandScoreView, HandScoreView];
   readonly matchTarget: number;
-  readonly completedHands: readonly CompletedHandSummaryView[];
-  /** The deciding scored hand, including only cards that are safe to reveal after completion. */
-  readonly finalHand: ScoredHandResultView;
+  /** Every completed hand, including only cards that are safe to reveal after completion. */
+  readonly completedHands: readonly HandResultView[];
 }
 
 export interface ScoredHandResultView {
@@ -83,6 +66,7 @@ export interface ScoredHandResultView {
   readonly declaration: "KNOCK" | "GIN";
   readonly declarerId: string;
   readonly declarerName: string;
+  readonly finalDiscard: PublicCard;
   readonly winnerId: string;
   readonly winnerName: string;
   readonly scoringReason: "GIN" | "KNOCK" | "UNDERCUT";

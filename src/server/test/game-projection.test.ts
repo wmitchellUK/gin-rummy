@@ -69,13 +69,21 @@ describe("browser game projection", () => {
     const knockerHand = hand("2♦ 3♥ 4♥ 5♥ 9♦ 9♥ 9♠ K♣ K♥ K♠");
     const opponentHand = hand("A♥ A♠ 2♥ 3♣ 7♣ 7♥ 7♠ J♣ J♦ J♥");
     const scored = scoreDeclaration({
-      handNumber: 1, dealerId: P2, declaration: "KNOCK", declarerId: P1,
+      handNumber: 2, dealerId: P2, declaration: "KNOCK", declarerId: P1,
       finalDiscard: hand("Q♦")[0]!, rules: DEFAULT_GAME_RULES,
       players: [{ id: P1, hand: knockerHand, matchScore: 0 }, { id: P2, hand: opponentHand, matchScore: 46 }],
     });
+    const cancelled = {
+      kind: "CANCELLED" as const,
+      handNumber: 1,
+      dealerId: P1,
+      reason: "STOCK_REDUCED_TO_TWO" as const,
+      pointsAwarded: 0 as const,
+      scoresAfter: { [P1]: 0, [P2]: 46 },
+    };
     const base = drawState(knockerHand, opponentHand);
     const completed = {
-      ...base, phase: "HAND_COMPLETE" as const, players: scored.players, handHistory: [scored.result],
+      ...base, phase: "HAND_COMPLETE" as const, players: scored.players, handNumber: 2, handHistory: [cancelled, scored.result],
       handResult: scored.result, nextHandAcknowledgements: [] as PlayerId[],
     } as GameState;
     const players = [{ playerId: P1, userId: P1, kind: "HUMAN" as const, seat: 0 as const, displayName: "Ada" }, { playerId: P2, userId: P2, kind: "HUMAN" as const, seat: 1 as const, displayName: "Bea" }];
@@ -92,7 +100,8 @@ describe("browser game projection", () => {
 
     expect(ada.handResult).toMatchObject({
       declarerId: P1, declarerName: "Ada", winnerId: P1, winnerName: "Ada", declaration: "KNOCK",
-      pointsAwarded: 2, scoresAfter: [{ playerId: P1, score: 2 }, { playerId: P2, score: 46 }],
+      finalDiscard: { id: "Q:DIAMONDS" }, pointsAwarded: 2,
+      scoresAfter: [{ playerId: P1, score: 2 }, { playerId: P2, score: 46 }],
     });
     expect(ada.handResult.players.map((player) => player.revealedHand.map((card) => card.id).sort())).toEqual([
       knockerHand.map((card) => card.id).sort(), opponentHand.map((card) => card.id).sort(),
@@ -131,7 +140,7 @@ describe("browser game projection", () => {
         loserId: P2,
         finalScores: scored.result.scoresAfter,
         matchTarget: DEFAULT_GAME_RULES.matchTarget,
-        completedHands: [scored.result],
+        completedHands: [cancelled, scored.result],
       },
     } as GameState;
     const completedView = projectGameState(complete, P1, players).gameResult;
@@ -139,15 +148,17 @@ describe("browser game projection", () => {
     expect(completedView).toMatchObject({
       winnerName: "Ada",
       finalScores: [{ displayName: "Ada", score: 2 }, { displayName: "Bea", score: 46 }],
-      completedHands: [{ kind: "SCORED", winnerName: "Ada", pointsAwarded: 2 }],
-      finalHand: {
+      completedHands: [{ kind: "CANCELLED", handNumber: 1, pointsAwarded: 0 }, {
         kind: "SCORED",
+        handNumber: 2,
         winnerName: "Ada",
         pointsAwarded: 2,
+        finalDiscard: { id: "Q:DIAMONDS" },
         players: [{ displayName: "Ada" }, { displayName: "Bea" }],
-      },
+      }],
     });
-    expect(completedView?.finalHand).toEqual(opponentCompletedView?.finalHand);
+    expect(completedView?.completedHands).toEqual(opponentCompletedView?.completedHands);
+    expect(JSON.stringify(completedView?.completedHands[0])).not.toContain("revealedHand");
     const completedPayload = JSON.stringify(completedView);
     for (const card of complete.stock) expect(completedPayload).not.toContain(card.id);
     expect(completedPayload).not.toContain("discardPile");

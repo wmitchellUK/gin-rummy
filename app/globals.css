@@ -231,9 +231,11 @@ button:focus-visible,a:focus-visible,input:focus-visible { outline:3px solid var
 .final-hand-summary .result-score { margin-top:13px; }
 .hand-history { margin-top:14px; text-align:left; }
 .hand-history h2 { margin:0 0 7px; color:var(--gold-300); font:600 16px "Playfair Display",Georgia,serif; }
-.hand-history>div { min-height:38px; padding:7px 9px; display:grid; grid-template-columns:68px 1fr auto; align-items:center; gap:8px; border-top:1px solid #53705e; background:#08271e; font-size:10px; }
-.hand-history>div strong { color:var(--cream-50); font-size:11px; }
-.hand-history>div small { color:var(--text-muted); }
+.hand-history>button { width:100%; min-height:44px; padding:7px 9px; display:grid; grid-template-columns:68px 1fr auto; align-items:center; gap:8px; border:0; border-top:1px solid #53705e; color:var(--cream-100); background:#08271e; font:inherit; font-size:10px; text-align:left; cursor:pointer; transition:background .16s ease,color .16s ease; }
+.hand-history>button:hover { color:var(--gold-300); background:#103728; }
+.hand-history>button:focus-visible { position:relative; z-index:1; outline:2px solid var(--gold-300); outline-offset:-2px; }
+.hand-history>button strong { color:var(--cream-50); font-size:11px; }
+.hand-history>button small { color:var(--text-muted); }
 
 /* Server-authored, replayable tabletop hand resolution. */
 .result-panel-wide { width:min(100%,980px); padding:22px 26px; }

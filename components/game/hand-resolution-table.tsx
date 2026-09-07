@@ -143,16 +143,15 @@ function animateLayoff(root: HTMLElement, cardId: string, targetMeldIndex: numbe
 }
 
 export function HandResolutionTable({
-  gameId, result, viewerSeat, rules, finalDiscard, footer, replayToken = 0, onOutcome,
+  gameId, result, viewerSeat, rules, footer, replayToken = 0, startResolved = false,
 }: {
   gameId: string;
   result: ScoredHandResultView;
   viewerSeat: 0 | 1;
   rules: PlayerGameView["rules"];
-  finalDiscard?: PublicCard;
   footer?: ReactNode;
   replayToken?: number;
-  onOutcome?: () => void;
+  startResolved?: boolean;
 }) {
   const resolutionKey = handResolutionStorageKey(gameId, result.handNumber);
   const [stage, setStage] = useState<ResolutionStage>("declaration");
@@ -160,9 +159,7 @@ export function HandResolutionTable({
   const [announcement, setAnnouncement] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const resultRef = useRef(result);
-  const onOutcomeRef = useRef(onOutcome);
   resultRef.current = result;
-  onOutcomeRef.current = onOutcome;
   const declarer = result.players.find((player) => player.playerId === result.declarerId)!;
   const defender = result.players.find((player) => player.playerId !== result.declarerId)!;
   const layoffs = defender.layoffs;
@@ -172,11 +169,11 @@ export function HandResolutionTable({
   useEffect(() => {
     setCompletedLayoffs(0);
     setAnnouncement("");
-    if (reducedMotionIsPreferred() || (replayToken === 0 && wasResolved(resolutionKey))) {
+    if (startResolved || reducedMotionIsPreferred() || (replayToken === 0 && wasResolved(resolutionKey))) {
       setCompletedLayoffs(layoffs.length);
       setStage("outcome");
     } else setStage("declaration");
-  }, [layoffs.length, replayToken, resolutionKey]);
+  }, [layoffs.length, replayToken, resolutionKey, startResolved]);
 
   useEffect(() => {
     const currentResult = resultRef.current;
@@ -211,7 +208,6 @@ export function HandResolutionTable({
   useEffect(() => {
     if (stage !== "outcome") return;
     if (!wasResolved(resolutionKey)) rememberResolution(resolutionKey, "completed");
-    onOutcomeRef.current?.();
   }, [resolutionKey, stage]);
 
   function showResult() {
@@ -239,7 +235,7 @@ export function HandResolutionTable({
     </ol>
     <div className="resolution-declaration" role="status" aria-live="polite">
       <div><span>{result.declaration === "GIN" ? "Gin declared" : "Knock declared"}</span><strong>{declaration}</strong></div>
-      {finalDiscard && <div className="resolution-final-discard"><span>Final discard</span><ResolutionCard card={finalDiscard} highlighted={stage === "declaration"} /></div>}
+      <div className="resolution-final-discard"><span>Final discard</span><ResolutionCard card={result.finalDiscard} highlighted={stage === "declaration"} /></div>
     </div>
     <div className="resolution-tabletop">
       {[...result.players].sort((left, right) => left.seat === viewerSeat ? 1 : right.seat === viewerSeat ? -1 : left.seat - right.seat).map((player) => <SeatHand

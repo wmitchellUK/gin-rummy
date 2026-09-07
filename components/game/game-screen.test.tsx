@@ -45,6 +45,7 @@ function finalHand(opponentName = "Kim", handNumber = 3): ScoredHandResultView {
     declaration: "KNOCK",
     declarerId: "p1",
     declarerName: "Will",
+    finalDiscard: card("Q:DIAMONDS", "Q", "DIAMONDS"),
     winnerId: "p1",
     winnerName: "Will",
     scoringReason: "KNOCK",
@@ -71,6 +72,7 @@ describe("game result surfaces", () => {
         declaration: "KNOCK",
         declarerId: "p1",
         declarerName: "Will",
+        finalDiscard: card("Q:DIAMONDS", "Q", "DIAMONDS"),
         winnerId: "p1",
         winnerName: "Will",
         scoringReason: "KNOCK",
@@ -93,6 +95,14 @@ describe("game result surfaces", () => {
 
   it("renders the celebration, complete final hand, and completed-hand history together", () => {
     vi.useFakeTimers();
+    const firstHand: ScoredHandResultView = {
+      ...finalHand("Kim", 1),
+      declaration: "GIN",
+      scoringReason: "GIN",
+      pointsAwarded: 34,
+      finalDiscard: card("K:CLUBS", "K", "CLUBS"),
+      scoresAfter: [{ playerId: "p1", displayName: "Will", score: 34 }, { playerId: "p2", displayName: "Kim", score: 0 }],
+    };
     const game: PlayerGameView = {
       ...baseGame(),
       status: "COMPLETE",
@@ -104,23 +114,39 @@ describe("game result surfaces", () => {
         finalScores: [{ playerId: "p1", displayName: "Will", score: 105 }, { playerId: "p2", displayName: "Kim", score: 81 }],
         matchTarget: 100,
         completedHands: [
-          { kind: "SCORED", handNumber: 1, declaration: "GIN", winnerId: "p1", winnerName: "Will", scoringReason: "GIN", pointsAwarded: 34 },
-          { kind: "CANCELLED", handNumber: 2, pointsAwarded: 0 },
-          { kind: "SCORED", handNumber: 3, declaration: "KNOCK", winnerId: "p1", winnerName: "Will", scoringReason: "KNOCK", pointsAwarded: 9 },
+          firstHand,
+          { kind: "CANCELLED", handNumber: 2, reason: "STOCK_REDUCED_TO_TWO", pointsAwarded: 0, scoresAfter: firstHand.scoresAfter },
+          finalHand(),
         ],
-        finalHand: finalHand(),
       },
     };
     const { container } = render(<GameResult game={game} busy={false} onRematch={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "View match summary" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show result" }));
     expect(screen.getByRole("heading", { name: "Knock wins" })).toBeInTheDocument();
-    act(() => vi.advanceTimersByTime(900));
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(screen.queryByRole("heading", { name: "Match complete" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View match summary" }));
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Match complete" }));
     expect(screen.getByText("Will", { selector: ".match-winner strong" })).toBeInTheDocument();
     expect(screen.getByText("Will +34")).toBeInTheDocument();
     expect(screen.getByText("Stock exhausted")).toBeInTheDocument();
     expect(container.querySelector(".victory-crest")).toHaveAttribute("aria-hidden", "true");
     expect(screen.getByRole("button", { name: "Replay deciding hand" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Request rematch" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Review hand 1/ }));
+    expect(screen.getByRole("heading", { name: "Hand 1 review" })).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Hand 1 review" }));
+    expect(container.querySelector("[data-resolution-stage]")).toHaveAttribute("data-resolution-stage", "outcome");
+    expect(screen.getByRole("img", { name: "K of clubs" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to match summary" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /Review hand 2/ }));
+    expect(screen.getByText(/Both hands stayed private and the score was unchanged\./)).toBeInTheDocument();
+    expect(screen.queryByText("Final discard")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to match summary" }));
+
     fireEvent.click(screen.getByRole("button", { name: "Replay deciding hand" }));
     expect(screen.getByRole("heading", { name: "Deciding hand" })).toBeInTheDocument();
     expect(container.querySelector("[data-resolution-stage]" )).toHaveAttribute("data-resolution-stage", "declaration");
@@ -138,16 +164,7 @@ describe("game result surfaces", () => {
         winnerName: hand.winnerName,
         finalScores: hand.scoresAfter,
         matchTarget: 100,
-        completedHands: [{
-          kind: "SCORED",
-          handNumber: hand.handNumber,
-          declaration: hand.declaration,
-          winnerId: hand.winnerId,
-          winnerName: hand.winnerName,
-          scoringReason: hand.scoringReason,
-          pointsAwarded: hand.pointsAwarded,
-        }],
-        finalHand: hand,
+        completedHands: [hand],
       },
     });
     const { rerender } = render(<GameResult game={gameFor(ginHand)} busy={false} onRematch={vi.fn()} />);
@@ -182,13 +199,12 @@ describe("game result surfaces", () => {
         winnerName: "Will",
         finalScores: [{ playerId: "p1", displayName: "Will", score: 100 }, { playerId: "p2", displayName: "Naia", score: 18 }],
         matchTarget: 100,
-        completedHands: [{ kind: "SCORED", handNumber: 1, declaration: "KNOCK", winnerId: "p1", winnerName: "Will", scoringReason: "KNOCK", pointsAwarded: 9 }],
-        finalHand: finalHand("Naia", 1),
+        completedHands: [finalHand("Naia", 1)],
       },
     };
     render(<GameResult game={game} busy={false} onRematch={onRematch} />);
     fireEvent.click(screen.getByRole("button", { name: "Show result" }));
-    act(() => vi.advanceTimersByTime(900));
+    fireEvent.click(screen.getByRole("button", { name: "View match summary" }));
     screen.getByRole("button", { name: "Play Naia again" }).click();
     expect(onRematch).toHaveBeenCalledWith("PLAY_AGAIN");
     expect(screen.queryByRole("button", { name: "Request rematch" })).not.toBeInTheDocument();

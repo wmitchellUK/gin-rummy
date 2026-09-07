@@ -34,6 +34,7 @@ function defender(layoffCount: 0 | 1 | 2, finalDeadwoodValue: number): RevealedP
 function result(overrides: Partial<ScoredHandResultView> = {}, opponent = defender(0, 16)): ScoredHandResultView {
   return {
     kind: "SCORED", handNumber: 4, declaration: "KNOCK", declarerId: "p1", declarerName: "Ada",
+    finalDiscard: card("Q", "DIAMONDS"),
     winnerId: "p1", winnerName: "Ada", scoringReason: "KNOCK", pointsAwarded: 11,
     players: [declarer(), opponent],
     scoresAfter: [{ playerId: "p1", displayName: "Ada", score: 40 }, { playerId: "p2", displayName: "Bea", score: 12 }],
@@ -42,7 +43,7 @@ function result(overrides: Partial<ScoredHandResultView> = {}, opponent = defend
 }
 
 function renderResolution(hand = result()) {
-  return render(<HandResolutionTable gameId="game-a" result={hand} viewerSeat={0} rules={rules} finalDiscard={card("Q", "DIAMONDS")} />);
+  return render(<HandResolutionTable gameId="game-a" result={hand} viewerSeat={0} rules={rules} />);
 }
 
 afterEach(() => {
@@ -148,5 +149,13 @@ describe("animated hand resolution", () => {
     const { container } = renderResolution(result({}, defender(1, 10)));
     expect(container.querySelector("[data-resolution-stage]" )).toHaveAttribute("data-resolution-stage", "outcome");
     expect(screen.getByRole("button", { name: "Replay layoffs" })).toBeInTheDocument();
+  });
+
+  it("can open a historical hand directly in its resolved state", () => {
+    const { container } = render(<HandResolutionTable gameId="game-a" result={result({}, defender(1, 10))} viewerSeat={0} rules={rules} startResolved />);
+    expect(container.querySelector("[data-resolution-stage]")).toHaveAttribute("data-resolution-stage", "outcome");
+    expect(screen.getByRole("heading", { name: "Knock wins" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Replay layoffs" }));
+    expect(container.querySelector("[data-resolution-stage]")).toHaveAttribute("data-resolution-stage", "reveal");
   });
 });

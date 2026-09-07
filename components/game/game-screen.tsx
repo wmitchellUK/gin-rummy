@@ -216,7 +216,6 @@ export function HandCompleteResult({ game, onStartNextHand, canStartNextHand }: 
       result={result}
       viewerSeat={game.you.seat}
       rules={game.rules}
-      finalDiscard={game.discardPile[0]}
       footer={<><MatchScores scores={result.scoresAfter} />{footer}</>}
     />
   </ResultOverlay>;
@@ -228,38 +227,53 @@ export function GameResult({ game, busy, onRematch }: { game: PlayerGameView; bu
 }
 function CompletedGameResult({ game, busy, onRematch }: { game: PlayerGameView; busy: boolean; onRematch: (response: "REQUEST" | "ACCEPT" | "PLAY_AGAIN") => Promise<void> }) {
   const result = game.gameResult!;
-  const [showDecidingHand, setShowDecidingHand] = useState(true);
+  const decidingHand = result.completedHands.at(-1);
+  if (!decidingHand || decidingHand.kind !== "SCORED") throw new Error("A completed match must end with a scored hand.");
+  const [showSummary, setShowSummary] = useState(false);
+  const [selectedHandNumber, setSelectedHandNumber] = useState<number>();
   const [replayToken, setReplayToken] = useState(0);
-  const transitionTimer = useRef<number | undefined>(undefined);
-  const showWinner = useCallback(() => {
-    if (transitionTimer.current !== undefined) window.clearTimeout(transitionTimer.current);
-    transitionTimer.current = window.setTimeout(() => setShowDecidingHand(false), 900);
-  }, []);
-  useEffect(() => () => {
-    if (transitionTimer.current !== undefined) window.clearTimeout(transitionTimer.current);
-  }, []);
   function replayDecidingHand() {
-    if (transitionTimer.current !== undefined) window.clearTimeout(transitionTimer.current);
     setReplayToken((value) => value + 1);
-    setShowDecidingHand(true);
+    setSelectedHandNumber(undefined);
+    setShowSummary(false);
   }
-  if (showDecidingHand) return <ResultOverlay title="Deciding hand" kicker={`Hand ${result.finalHand.handNumber}`} wide>
+  if (!showSummary) return <ResultOverlay title="Deciding hand" kicker={`Hand ${decidingHand.handNumber}`} wide key={`deciding-${replayToken}`}>
     <HandResolutionTable
       gameId={game.gameId}
-      result={result.finalHand}
+      result={decidingHand}
       viewerSeat={game.you.seat}
       rules={game.rules}
-      finalDiscard={game.discardPile[0]}
       replayToken={replayToken}
-      onOutcome={showWinner}
+      footer={<button className="action-button primary result-primary" type="button" onClick={() => setShowSummary(true)}>View match summary</button>}
     />
   </ResultOverlay>;
-  return <ResultOverlay title="Match complete" kicker="A fine game">
+  const selectedHand = result.completedHands.find((hand) => hand.handNumber === selectedHandNumber);
+  if (selectedHand?.kind === "SCORED") return <ResultOverlay title={`Hand ${selectedHand.handNumber} review`} kicker="Hand history" wide key={`review-${selectedHand.handNumber}`}>
+    <HandResolutionTable
+      gameId={game.gameId}
+      result={selectedHand}
+      viewerSeat={game.you.seat}
+      rules={game.rules}
+      startResolved
+      footer={<button className="action-button primary result-primary" type="button" onClick={() => setSelectedHandNumber(undefined)}>Back to match summary</button>}
+    />
+  </ResultOverlay>;
+  if (selectedHand?.kind === "CANCELLED") return <ResultOverlay title={`Hand ${selectedHand.handNumber} review`} kicker="No score awarded" key={`review-${selectedHand.handNumber}`}>
+    <p>The stock reached two cards. Both hands stayed private and the score was unchanged.</p>
+    <MatchScores scores={selectedHand.scoresAfter} />
+    <button className="action-button primary result-primary" type="button" onClick={() => setSelectedHandNumber(undefined)}>Back to match summary</button>
+  </ResultOverlay>;
+  return <ResultOverlay title="Match complete" kicker="A fine game" key="summary">
     <VictoryCrest />
     <div className="match-winner"><span>Winner</span><strong>{result.winnerName}</strong><small>First to {result.matchTarget}</small></div>
     <MatchScores scores={result.finalScores} />
     <button className="action-button secondary replay-deciding-hand" type="button" onClick={replayDecidingHand}>Replay deciding hand</button>
-    <section className="hand-history" aria-labelledby="hand-history-title"><h2 id="hand-history-title">Hand history</h2>{result.completedHands.map((hand) => <div key={hand.handNumber}><span>Hand {hand.handNumber}</span><strong>{hand.kind === "CANCELLED" ? "No score" : `${hand.winnerName} +${hand.pointsAwarded}`}</strong><small>{hand.kind === "CANCELLED" ? "Stock exhausted" : hand.scoringReason === "GIN" ? "Gin" : hand.scoringReason === "UNDERCUT" ? "Undercut" : "Knock"}</small></div>)}</section>
+    <section className="hand-history" aria-labelledby="hand-history-title"><h2 id="hand-history-title">Hand history</h2>{result.completedHands.map((hand) => <button
+      type="button"
+      aria-label={`Review hand ${hand.handNumber}: ${hand.kind === "CANCELLED" ? "no score, stock exhausted" : `${hand.winnerName} scored ${hand.pointsAwarded}, ${hand.scoringReason.toLowerCase()}`}`}
+      onClick={() => setSelectedHandNumber(hand.handNumber)}
+      key={hand.handNumber}
+    ><span>Hand {hand.handNumber}</span><strong>{hand.kind === "CANCELLED" ? "No score" : `${hand.winnerName} +${hand.pointsAwarded}`}</strong><small>{hand.kind === "CANCELLED" ? "Stock exhausted" : hand.scoringReason === "GIN" ? "Gin" : hand.scoringReason === "UNDERCUT" ? "Undercut" : "Knock"}</small></button>)}</section>
     {game.mode === "SINGLE_PLAYER" ? <button className="action-button primary result-primary" onClick={() => void onRematch("PLAY_AGAIN")} disabled={busy}>Play Naia again</button> : <>
       {!game.rematch && <button className="action-button primary result-primary" onClick={() => void onRematch("REQUEST")} disabled={busy}>Request rematch</button>}
       {game.rematch?.requestedBy === "YOU" && <p className="waiting-status"><i /> Rematch requested — waiting for your opponent</p>}
